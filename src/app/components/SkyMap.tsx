@@ -227,8 +227,10 @@ export default function SkyMap() {
   }, []);
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ block: 'end' });
-  }, [log, showLog]);
+  // rola só a caixa do log, sem mexer na página
+  const box = logEndRef.current?.parentElement;
+  if (box) box.scrollTop = box.scrollHeight;
+}, [log, showLog]);
 
   // ---------------- Aladin ----------------
   const moveMap = useCallback(

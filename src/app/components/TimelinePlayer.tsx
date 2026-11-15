@@ -58,7 +58,6 @@ const TICK_COLOR: Record<Status, string> = {
 };
 
 // Miniatura desenhada a partir do mesmo dado alinhado do vídeo
-// Miniatura desenhada a partir do mesmo dado alinhado do vídeo
 function Thumb({ loaded, gain }: { loaded: Loaded; gain: number }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
 
@@ -122,6 +121,7 @@ export default function TimelinePlayer({
   const [exporting, setExporting] = useState(false);
   const [exportPct, setExportPct] = useState(0);
   const [panel, setPanel] = useState<null | 'help' | 'info'>(null);
+  const [showCtl, setShowCtl] = useState(false); // só afeta o celular: abre/fecha os sliders
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stripRef = useRef<HTMLDivElement | null>(null);
@@ -433,7 +433,8 @@ export default function TimelinePlayer({
       ? `falta ${fmtEta((pr.elapsedMs / pr.finished) * pr.pending)}`
       : 'cada frame leva 10–25 s na IRSA';
 
-  const sel = 'bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white outline-none';
+  // text-base no celular evita o zoom automático do iPhone ao focar no select
+  const sel = 'bg-gray-800 border border-gray-700 rounded px-2 py-1.5 md:py-1 text-base md:text-xs text-white outline-none';
   const aspect = crop ? crop.w / crop.h : 1;
   const sumText =
     summary.t0 !== null
@@ -469,52 +470,65 @@ export default function TimelinePlayer({
           <option value="medsub" className="bg-gray-900">− mediana (realça o que se move)</option>
           <option value="mean" className="bg-gray-900">Empilhada (média)</option>
         </select>
-        <label className="flex items-center gap-1 text-gray-400">
-          vel.
-          <input type="range" min={1} max={12} value={fps} onChange={(e) => setFps(+e.target.value)} />
-          {fps} fps
-        </label>
-        <label className="flex items-center gap-1 text-gray-400" title="Quanto mais alto, mais objetos fracos aparecem (e mais ruído)">
-          contraste
-          <input type="range" min={3} max={40} value={gain} onChange={(e) => setGain(+e.target.value)} />
-        </label>
-        <label className="flex items-center gap-1 text-gray-400">
-          zoom
-          <input type="range" min={1} max={8} step={0.5} value={zoom} onChange={(e) => setZoom(+e.target.value)} />
-          {zoom}x
-        </label>
-        <label className="flex items-center gap-1 text-gray-400" title="Frames em que o detector cobre menos que isso da área ficam fora do vídeo">
-          cobertura mín.
-          <input type="range" min={0} max={100} step={5} value={minValid} onChange={(e) => setMinValid(+e.target.value)} />
-          {minValid}%
-        </label>
-        <label
-  className="flex items-center gap-1 text-gray-400"
-  title="Remove as bordas sem cobertura comum entre os frames. Desativado, mostra a grade completa."
->
-          <input type="checkbox" checked={autoCrop} onChange={(e) => setAutoCrop(e.target.checked)} />
-          recorte automático
-        </label>
-        <label className="flex items-center gap-1 text-gray-400" title="Círculo amarelo na posição digitada (catálogo, época J2000)">
-          <input type="checkbox" checked={showMark} onChange={(e) => setShowMark(e.target.checked)} />
-          marcar alvo
-        </label>
+
+        {/* Só no celular: abre/fecha os sliders */}
+        <button
+          onClick={() => setShowCtl((s) => !s)}
+          className={`md:hidden px-3 py-1.5 rounded border ${showCtl ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-800 border-gray-700 text-gray-300'}`}
+        >
+          ⚙ ajustes
+        </button>
+
+        {/* No celular: linha própria que abre/fecha. No desktop (md:contents): os itens ficam soltos na barra, como antes */}
+        <div className={`${showCtl ? 'flex' : 'hidden'} md:contents flex-wrap items-center gap-x-3 gap-y-2 w-full`}>
+          <label className="flex items-center gap-1 text-gray-400">
+            vel.
+            <input type="range" min={1} max={12} value={fps} onChange={(e) => setFps(+e.target.value)} />
+            {fps} fps
+          </label>
+          <label className="flex items-center gap-1 text-gray-400" title="Quanto mais alto, mais objetos fracos aparecem (e mais ruído)">
+            contraste
+            <input type="range" min={3} max={40} value={gain} onChange={(e) => setGain(+e.target.value)} />
+          </label>
+          <label className="flex items-center gap-1 text-gray-400">
+            zoom
+            <input type="range" min={1} max={8} step={0.5} value={zoom} onChange={(e) => setZoom(+e.target.value)} />
+            {zoom}x
+          </label>
+          <label className="flex items-center gap-1 text-gray-400" title="Frames em que o detector cobre menos que isso da área ficam fora do vídeo">
+            cobertura mín.
+            <input type="range" min={0} max={100} step={5} value={minValid} onChange={(e) => setMinValid(+e.target.value)} />
+            {minValid}%
+          </label>
+          <label
+            className="flex items-center gap-1 text-gray-400"
+            title="Remove as bordas sem cobertura comum entre os frames. Desativado, mostra a grade completa."
+          >
+            <input type="checkbox" checked={autoCrop} onChange={(e) => setAutoCrop(e.target.checked)} />
+            recorte automático
+          </label>
+          <label className="flex items-center gap-1 text-gray-400" title="Círculo amarelo na posição digitada (catálogo, época J2000)">
+            <input type="checkbox" checked={showMark} onChange={(e) => setShowMark(e.target.checked)} />
+            marcar alvo
+          </label>
+        </div>
+
         <button
           onClick={exportMedia}
           disabled={exporting || ready.length === 0}
-          className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 px-3 py-0.5 rounded-full text-white"
+          className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 px-3 py-1.5 md:py-0.5 rounded-full text-white"
           title="Grava os frames mostrados em um vídeo (.webm). Na visão Empilhada, baixa um PNG."
         >
           {exporting ? `Gravando... ${exportPct}%` : mode === 'mean' || ready.length < 2 ? 'Baixar PNG' : 'Baixar vídeo (.webm)'}
         </button>
         {st.err > 0 && (
-          <button onClick={retryErrors} className="bg-blue-600 hover:bg-blue-500 px-3 py-0.5 rounded-full text-white">
+          <button onClick={retryErrors} className="bg-blue-600 hover:bg-blue-500 px-3 py-1.5 md:py-0.5 rounded-full text-white">
             Tentar {st.err} erros de novo
           </button>
         )}
-        <span className="flex-1" />
-        <button onClick={() => setPanel((p) => (p === 'help' ? null : 'help'))} className="px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700">? ajuda</button>
-        <button onClick={() => setPanel((p) => (p === 'info' ? null : 'info'))} className="px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700">ⓘ detalhes</button>
+        <span className="hidden md:block flex-1" />
+        <button onClick={() => setPanel((p) => (p === 'help' ? null : 'help'))} className="px-2 py-1.5 md:py-0.5 rounded bg-gray-800 hover:bg-gray-700">? ajuda</button>
+        <button onClick={() => setPanel((p) => (p === 'info' ? null : 'info'))} className="px-2 py-1.5 md:py-0.5 rounded bg-gray-800 hover:bg-gray-700">ⓘ detalhes</button>
       </div>
 
       {/* Resumo calculado dos dados */}
@@ -560,7 +574,7 @@ export default function TimelinePlayer({
                 { label: 'Montando o vídeo', state: 'todo' },
               ]}
             />
-            <div className="w-72">
+            <div className="w-64 max-w-full">
               <Bar value={pr.total ? pr.done / pr.total : 0} indeterminate={pr.done === 0} />
             </div>
             <span className="text-[11px] text-gray-500">{eta}</span>
@@ -577,7 +591,7 @@ export default function TimelinePlayer({
 
         {/* O vídeo já toca, mas ainda chegam frames */}
         {ready.length > 0 && pr.pending > 0 && (
-          <div className="absolute left-2 bottom-2 z-10 w-60 bg-gray-900/90 border border-gray-700 rounded p-2 flex flex-col gap-1 pointer-events-none">
+          <div className="absolute left-2 bottom-2 z-10 w-48 md:w-60 bg-gray-900/90 border border-gray-700 rounded p-2 flex flex-col gap-1 pointer-events-none">
             <span className="text-[10px] text-gray-300 font-mono">
               Baixando mais frames: {pr.done}/{pr.total} · {eta}
             </span>
@@ -586,17 +600,17 @@ export default function TimelinePlayer({
         )}
 
         {panel === 'help' && (
-          <div className="absolute top-2 left-2 right-2 max-w-xl z-10 bg-gray-900/95 border border-gray-700 rounded p-3 text-[11px] text-gray-300 leading-relaxed">
+          <div className="absolute top-2 left-2 right-2 max-w-xl max-h-[90%] overflow-auto z-10 bg-gray-900/95 border border-gray-700 rounded p-3 text-[11px] text-gray-300 leading-relaxed">
             <b className="text-white">Como ler esta tela.</b> O ponto que você escolheu foi fotografado várias vezes pelo SPHEREx.
             Cada traço no eixo de tempo é uma observação; os blocos cinza são períodos de observação seguidos, agrupados
             automaticamente, e os vazios entre eles são lacunas. A imagem mostra o mesmo pedaço do céu em cada data:
             o que é fixo fica parado, e o que se move entre datas é candidato a asteroide, cometa ou estrela próxima.
             O modo "− mediana" apaga o que não muda e deixa só o que varia. Cada detector vê uma faixa de cor do infravermelho,
-            e a cor muda dentro da imagem, então compare frames do mesmo detector. Clique num traço ou numa miniatura para ir à observação.
+            e a cor muda dentro da imagem, então compare frames do mesmo detector. Toque num traço ou numa miniatura para ir à observação.
           </div>
         )}
         {panel === 'info' && (
-          <div className="absolute top-2 right-2 w-96 max-h-[80%] overflow-auto z-10 bg-gray-900/95 border border-gray-700 rounded p-3 text-[10px] text-gray-300 font-mono">
+          <div className="absolute top-2 right-2 w-[calc(100%-1rem)] md:w-96 max-h-[80%] overflow-auto z-10 bg-gray-900/95 border border-gray-700 rounded p-3 text-[10px] text-gray-300 font-mono">
             <div className="text-white mb-1">Frame atual: {curFrame?.date || '—'} · {det}</div>
             <pre className="whitespace-pre-wrap break-all">
               {curLoaded?.info ? JSON.stringify(curLoaded.info, null, 1) : 'Sem metadados (atualize o /api/align para a versão nova).'}
@@ -619,7 +633,11 @@ export default function TimelinePlayer({
                 key={k}
                 onClick={() => pick(f)}
                 title={`${f.date || 'sem data'} · ${statusOf(f)}`}
-                className={`absolute -translate-x-1/2 rounded-sm ${isCur ? 'bg-white top-0 h-8 w-[3px] z-10' : `${TICK_COLOR[statusOf(f)]} top-0.5 h-7 w-[5px]`}`}
+                className={`absolute -translate-x-1/2 rounded-sm ${
+                  isCur
+                    ? 'bg-white top-0 h-8 w-[4px] md:w-[3px] z-10'
+                    : `${TICK_COLOR[statusOf(f)]} top-0.5 h-7 w-[7px] md:w-[5px]`
+                }`}
                 style={{ left: `${axis.pos[i] * 100}%` }}
               />
             );
@@ -631,33 +649,33 @@ export default function TimelinePlayer({
         </div>
       </div>
 
-      {/* Reprodução */}
-      <div className="p-2 bg-gray-900/90 flex items-center gap-3 text-xs">
+      {/* Reprodução: no celular os textos descem para uma linha própria */}
+      <div className="p-2 bg-gray-900/90 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
         <button
           onClick={() => setPlaying((p) => !p)}
           disabled={ready.length < 2 || mode === 'mean'}
-          className="w-16 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded py-1 text-white"
+          className="w-20 md:w-16 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded py-1.5 md:py-1 text-white"
         >
           {playing ? '⏸ Pausar' : '▶ Play'}
         </button>
-        <button onClick={() => goto(cur - 1)} className="px-2 py-1 bg-gray-800 rounded">◀</button>
+        <button onClick={() => goto(cur - 1)} className="px-3 md:px-2 py-1.5 md:py-1 bg-gray-800 rounded">◀</button>
         <input
           type="range"
           min={0}
           max={Math.max(0, ready.length - 1)}
           value={cur}
           onChange={(e) => { setPlaying(false); goto(+e.target.value); }}
-          className="flex-1"
+          className="flex-1 min-w-[6rem]"
         />
-        <button onClick={() => goto(cur + 1)} className="px-2 py-1 bg-gray-800 rounded">▶</button>
-        <span className="font-mono text-gray-300 min-w-56 text-right">
+        <button onClick={() => goto(cur + 1)} className="px-3 md:px-2 py-1.5 md:py-1 bg-gray-800 rounded">▶</button>
+        <span className="font-mono text-gray-300 w-full md:w-auto md:min-w-56 text-left md:text-right order-last md:order-none">
           {mode === 'mean'
             ? `média de ${ready.length} frames`
             : ready.length
             ? `${cur + 1}/${ready.length} · ${curFrame?.date || '—'}${curLoaded ? ` · ${Math.round(curLoaded.valid * 100)}% cob.` : ''}`
             : '—'}
         </span>
-        <span className="font-mono text-gray-500">
+        <span className="font-mono text-gray-500 w-full md:w-auto order-last md:order-none text-[11px] md:text-xs">
           {ready.length}/{list.length} ok
           {st.pending > 0 ? ` · ${st.pending} baixando` : ''}
           {st.low ? ` · ${st.low} descartados` : ''}
@@ -667,7 +685,7 @@ export default function TimelinePlayer({
       </div>
 
       {/* Miniaturas (mesmo dado do vídeo, em ordem de data) */}
-      <div ref={stripRef} className="h-28 shrink-0 flex gap-1.5 overflow-x-auto overflow-y-hidden p-2 bg-gray-950 border-t border-gray-800">
+      <div ref={stripRef} className="h-24 md:h-28 shrink-0 flex gap-1.5 overflow-x-auto overflow-y-hidden p-2 bg-gray-950 border-t border-gray-800">
         {list.map((f, i) => {
           const k = keyOf(f);
           const s = getSlot(k);
@@ -677,11 +695,11 @@ export default function TimelinePlayer({
               key={k}
               data-i={i}
               onClick={() => pick(f)}
-              className={`shrink-0 w-20 flex flex-col gap-0.5 p-0.5 rounded border ${
+              className={`shrink-0 w-16 md:w-20 flex flex-col gap-0.5 p-0.5 rounded border ${
                 k === curKey ? 'border-blue-500 bg-gray-800' : 'border-gray-800 bg-gray-900'
               } ${status === 'ok' ? 'cursor-pointer hover:border-gray-600' : 'opacity-80'}`}
             >
-              <div className="h-20 bg-black rounded overflow-hidden flex items-center justify-center p-0.5">
+              <div className="h-14 md:h-20 bg-black rounded overflow-hidden flex items-center justify-center p-0.5">
                 {s?.status === 'ok' ? (
                   <div className="sx-fade w-full h-full">
                     <Thumb loaded={s.loaded!} gain={gain} />

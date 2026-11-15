@@ -169,14 +169,16 @@ function setSurvey(aladin: any, A: any, url: string, onError: (m: string) => voi
   const hips = A.imageHiPS(url, { errorCallback: () => onError(`HiPS não encontrado: ${url}`) });
   aladin.setBaseImageLayer(hips);
 }
+
 export default function SkyMap() {
   const [ra, setRa] = useState('269.452075');
-const [picked, setPicked] = useState<{ ra: number; dec: number; fov: number } | null>(null);
-const [drawMode, setDrawMode] = useState(false);
-const [drawing, setDrawing] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
-const [searchNote, setSearchNote] = useState('');
-useFrameStore(); // re-renderiza quando chega um frame
-const prog = progress();
+  const [dec, setDec] = useState('4.693391');
+  const [picked, setPicked] = useState<{ ra: number; dec: number; fov: number } | null>(null);
+  const [drawMode, setDrawMode] = useState(false);
+  const [drawing, setDrawing] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const [searchNote, setSearchNote] = useState('');
+  useFrameStore(); // re-renderiza quando chega um frame
+  const prog = progress();
   const [fov, setFov] = useState(0.24);
   const [band, setBand] = useState('color');
   const [mode, setMode] = useState<Mode>('map');
@@ -192,15 +194,14 @@ const prog = progress();
   const [view, setView] = useState<View>({ s: 1, x: 0, y: 0 });
   const [log, setLog] = useState<LogEntry[]>([]);
   const [showLog, setShowLog] = useState(true);
-  const searchSecs = useElapsed(phase === 'searching');  const [dec, setDec] = useState('4.693391');
-
+  const searchSecs = useElapsed(phase === 'searching');
 
   const runRef = useRef(0);
   const centerRef = useRef<Center>(center);
   const bandRef = useRef(band);
-const queueRef = useRef<{ key: string; run: () => Promise<void> }[]>([]);
-const stripRef = useRef<HTMLDivElement | null>(null);
-const tilesRef = useRef<Record<string, TileState>>({});
+  const queueRef = useRef<{ key: string; run: () => Promise<void> }[]>([]);
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  const tilesRef = useRef<Record<string, TileState>>({});
   const activeRef = useRef(0);
   const blobUrlsRef = useRef<string[]>([]);
   const abortRef = useRef<AbortController | null>(null);
@@ -213,13 +214,12 @@ const tilesRef = useRef<Record<string, TileState>>({});
   const overlayRef = useRef<any>(null);
   const pausedRef = useRef(false);
   const fovRef = useRef(fov);
-const drawRef = useRef<{ x0: number; y0: number } | null>(null);
-const mapBoxRef = useRef<HTMLDivElement | null>(null);
-const pickOverlayRef = useRef<any>(null);
+  const drawRef = useRef<{ x0: number; y0: number } | null>(null);
+  const mapBoxRef = useRef<HTMLDivElement | null>(null);
+  const pickOverlayRef = useRef<any>(null);
 
-    tilesRef.current = tiles;
-    fovRef.current = fov;
-
+  tilesRef.current = tiles;
+  fovRef.current = fov;
 
   const addLog = useCallback((level: LogLevel, text: string) => {
     const t = new Date().toLocaleTimeString('pt-BR');
@@ -259,25 +259,25 @@ const pickOverlayRef = useRef<any>(null);
   );
 
   // Círculo ciano = área escolhida pelo usuário (f = null apaga)
-const showPick = useCallback(
-  (r: number, d: number, f: number | null) => {
-    const al = aladinRef.current;
-    const A = aRef.current;
-    if (!al || !A) return;
-    try {
-      if (!pickOverlayRef.current) {
-        pickOverlayRef.current = A.graphicOverlay({ color: '#22d3ee', lineWidth: 2 });
-        al.addOverlay(pickOverlayRef.current);
-      } else {
-        pickOverlayRef.current.removeAll();
+  const showPick = useCallback(
+    (r: number, d: number, f: number | null) => {
+      const al = aladinRef.current;
+      const A = aRef.current;
+      if (!al || !A) return;
+      try {
+        if (!pickOverlayRef.current) {
+          pickOverlayRef.current = A.graphicOverlay({ color: '#22d3ee', lineWidth: 2 });
+          al.addOverlay(pickOverlayRef.current);
+        } else {
+          pickOverlayRef.current.removeAll();
+        }
+        if (f !== null) pickOverlayRef.current.add(A.circle(r, d, f / 2));
+      } catch (e: any) {
+        addLog('warn', `Aladin (marcar área): ${e?.message || e}`);
       }
-      if (f !== null) pickOverlayRef.current.add(A.circle(r, d, f / 2));
-    } catch (e: any) {
-      addLog('warn', `Aladin (marcar área): ${e?.message || e}`);
-    }
-  },
-  [addLog]
-);
+    },
+    [addLog]
+  );
 
   const initAladin = useCallback(
     (isCancelled: () => boolean = () => false) => {
@@ -289,7 +289,7 @@ const showPick = useCallback(
         .then((A) => {
           if (isCancelled() || aladinRef.current) return;
           const c = centerRef.current;
-const bandUrl = surveyUrl(bandRef.current);
+          const bandUrl = surveyUrl(bandRef.current);
           aRef.current = A;
           aladinRef.current = A.aladin('#aladin-lite-div', {
             survey: bandUrl,
@@ -303,13 +303,13 @@ const bandUrl = surveyUrl(bandRef.current);
           });
 
           moveMap(c);
-aladinRef.current.on('click', (e: any) => {
-  if (e?.isDragging) return;
-  if (!Number.isFinite(e?.ra) || !Number.isFinite(e?.dec)) return;
-  addLog('info', `Clique no mapa: RA ${e.ra.toFixed(5)}, Dec ${e.dec.toFixed(5)}`);
-  setPicked({ ra: e.ra, dec: e.dec, fov: fovRef.current });
-  showPick(e.ra, e.dec, fovRef.current);
-});
+          aladinRef.current.on('click', (e: any) => {
+            if (e?.isDragging) return;
+            if (!Number.isFinite(e?.ra) || !Number.isFinite(e?.dec)) return;
+            addLog('info', `Clique no mapa: RA ${e.ra.toFixed(5)}, Dec ${e.dec.toFixed(5)}`);
+            setPicked({ ra: e.ra, dec: e.dec, fov: fovRef.current });
+            showPick(e.ra, e.dec, fovRef.current);
+          });
           setMapState('ready');
           setMapMsg('Mapa pronto');
           addLog('ok', `Aladin pronto · HiPS ${bandRef.current}`);
@@ -321,7 +321,7 @@ aladinRef.current.on('click', (e: any) => {
           addLog('error', `Aladin: ${e?.message || e}`);
         });
     },
-    [addLog, moveMap]
+    [addLog, moveMap, showPick]
   );
 
   useEffect(() => {
@@ -334,18 +334,18 @@ aladinRef.current.on('click', (e: any) => {
   }, []);
 
   // Troca de banda (HiPS)
-useEffect(() => {
-  bandRef.current = band;
-  const al = aladinRef.current;
-  const A = aRef.current;
-  if (!al || !A) return;
-  try {
-    setSurvey(al, A, surveyUrl(band), (m) => addLog('error', m));
-    addLog('info', `Fundo trocado para ${band}`);
-  } catch (e: any) {
-    addLog('error', `Falha ao trocar HiPS: ${e?.message || e}`);
-  }
-}, [band, addLog]);
+  useEffect(() => {
+    bandRef.current = band;
+    const al = aladinRef.current;
+    const A = aRef.current;
+    if (!al || !A) return;
+    try {
+      setSurvey(al, A, surveyUrl(band), (m) => addLog('error', m));
+      addLog('info', `Fundo trocado para ${band}`);
+    } catch (e: any) {
+      addLog('error', `Falha ao trocar HiPS: ${e?.message || e}`);
+    }
+  }, [band, addLog]);
 
   // ---------------- Frames (fila de recortes) ----------------
   const setTile = useCallback((key: string, state: TileState) => {
@@ -353,89 +353,89 @@ useEffect(() => {
   }, []);
 
   const pump = useCallback(() => {
-  while (!pausedRef.current && activeRef.current < MAX_PARALLEL && queueRef.current.length > 0) {
-    const item = queueRef.current.shift()!;
-    activeRef.current++;
-    item.run().finally(() => {
-      activeRef.current--;
-      pump();
-    });
-  }
-}, []);
-
-const loadTile = useCallback(
-  (key: string, url: string, runId: number) => {
-    if (!url) {
-      setTile(key, { status: 'error', message: 'Sem URL' });
-      return;
+    while (!pausedRef.current && activeRef.current < MAX_PARALLEL && queueRef.current.length > 0) {
+      const item = queueRef.current.shift()!;
+      activeRef.current++;
+      item.run().finally(() => {
+        activeRef.current--;
+        pump();
+      });
     }
-    setTile(key, { status: 'loading' });
+  }, []);
 
-    queueRef.current.push({
-      key,
-      run: async () => {
-        if (runId !== runRef.current) return;
-        const signal = abortRef.current?.signal;
-        const t0 = Date.now();
-        try {
-          const res = await fetch(url, { signal });
+  const loadTile = useCallback(
+    (key: string, url: string, runId: number) => {
+      if (!url) {
+        setTile(key, { status: 'error', message: 'Sem URL' });
+        return;
+      }
+      setTile(key, { status: 'loading' });
+
+      queueRef.current.push({
+        key,
+        run: async () => {
           if (runId !== runRef.current) return;
-          const secs = ((Date.now() - t0) / 1000).toFixed(1);
+          const signal = abortRef.current?.signal;
+          const t0 = Date.now();
+          try {
+            const res = await fetch(url, { signal });
+            if (runId !== runRef.current) return;
+            const secs = ((Date.now() - t0) / 1000).toFixed(1);
 
-          if (res.status === 422) {
-            setTile(key, { status: 'nocoverage' });
-            addLog('info', `${shortName(key)}: sem cobertura (${secs}s)`);
-            return;
-          }
-          if (res.status === 499) return;
-          if (!res.ok) {
-            let detail = `HTTP ${res.status}`;
-            try {
-              const j = await res.json();
-              if (j?.error) detail += ` · ${j.error}`;
-            } catch {}
-            throw new Error(detail);
-          }
+            if (res.status === 422) {
+              setTile(key, { status: 'nocoverage' });
+              addLog('info', `${shortName(key)}: sem cobertura (${secs}s)`);
+              return;
+            }
+            if (res.status === 499) return;
+            if (!res.ok) {
+              let detail = `HTTP ${res.status}`;
+              try {
+                const j = await res.json();
+                if (j?.error) detail += ` · ${j.error}`;
+              } catch {}
+              throw new Error(detail);
+            }
 
-          const blob = await res.blob();
-          if (runId !== runRef.current) return;
-          const src = URL.createObjectURL(blob);
-          blobUrlsRef.current.push(src);
-          setTile(key, { status: 'ok', src });
-          addLog('ok', `${shortName(key)}: ok (${secs}s)`);
-        } catch (err: any) {
-          if (err?.name === 'AbortError' || runId !== runRef.current) return;
-          const msg = err?.message || 'Erro desconhecido';
-          setTile(key, { status: 'error', message: msg });
-          addLog('error', `${shortName(key)}: ${msg}`);
-        }
-      },
+            const blob = await res.blob();
+            if (runId !== runRef.current) return;
+            const src = URL.createObjectURL(blob);
+            blobUrlsRef.current.push(src);
+            setTile(key, { status: 'ok', src });
+            addLog('ok', `${shortName(key)}: ok (${secs}s)`);
+          } catch (err: any) {
+            if (err?.name === 'AbortError' || runId !== runRef.current) return;
+            const msg = err?.message || 'Erro desconhecido';
+            setTile(key, { status: 'error', message: msg });
+            addLog('error', `${shortName(key)}: ${msg}`);
+          }
+        },
+      });
+
+      pump();
+    },
+    [pump, setTile, addLog]
+  );
+
+  // Pedido pela visibilidade: só enfileira se ainda não foi pedido
+  const enterTile = (frame: any) => {
+    const key = frameKey(frame);
+    if (tilesRef.current[key]) return;
+    if (queueRef.current.some((q) => q.key === key)) return;
+    loadTile(key, buildPngUrl(frame, centerRef.current), runRef.current);
+  };
+
+  // Saiu da tela e ainda não começou a baixar: tira da fila
+  const cancelQueued = (key: string) => {
+    const i = queueRef.current.findIndex((q) => q.key === key);
+    if (i < 0) return; // já está baixando ou pronto: deixa terminar
+    queueRef.current.splice(i, 1);
+    setTiles((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
     });
-
-    pump();
-  },
-  [pump, setTile, addLog]
-);
-
-// Pedido pela visibilidade: só enfileira se ainda não foi pedido
-const enterTile = (frame: any) => {
-  const key = frameKey(frame);
-  if (tilesRef.current[key]) return;
-  if (queueRef.current.some((q) => q.key === key)) return;
-  loadTile(key, buildPngUrl(frame, centerRef.current), runRef.current);
-};
-
-// Saiu da tela e ainda não começou a baixar: tira da fila
-const cancelQueued = (key: string) => {
-  const i = queueRef.current.findIndex((q) => q.key === key);
-  if (i < 0) return; // já está baixando ou pronto: deixa terminar
-  queueRef.current.splice(i, 1);
-  setTiles((prev) => {
-    const next = { ...prev };
-    delete next[key];
-    return next;
-  });
-};
+  };
 
   const fetchData = async (targetRa: string, targetDec: string, targetFov: number) => {
     const runId = ++runRef.current;
@@ -461,7 +461,7 @@ const cancelQueued = (key: string) => {
     setCenter(c);
     moveMap(c); // o mapa vai para o alvo na hora, sem esperar a IRSA
     showPick(0, 0, null);
-setSearchNote('');
+    setSearchNote('');
 
     setFrames([]);
     setTiles({});
@@ -537,20 +537,20 @@ setSearchNote('');
     if (first) setSelectedKey(frameKey(first));
   }, [tiles, frames]);
 
- const handleSearch = (e: React.FormEvent) => {
-  e.preventDefault();
-  const p = parseCoords(`${ra} ${dec}`);
-  if (!p) {
-    setPhase('error');
-    setStatusMsg('Não entendi as coordenadas. Exemplos: "269.452 4.693" ou "08h55m10.8s -07d14m42s". Dá para colar as duas no campo RA.');
-    return;
-  }
-  const r = String(p.ra);
-  const d = String(p.dec);
-  setRa(r);
-  setDec(d);
-  fetchData(r, d, fov);
-};
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    const p = parseCoords(`${ra} ${dec}`);
+    if (!p) {
+      setPhase('error');
+      setStatusMsg('Não entendi as coordenadas. Exemplos: "269.452 4.693" ou "08h55m10.8s -07d14m42s". Dá para colar as duas no campo RA.');
+      return;
+    }
+    const r = String(p.ra);
+    const d = String(p.dec);
+    setRa(r);
+    setDec(d);
+    fetchData(r, d, fov);
+  };
 
   const selectTarget = (t: { ra: string; dec: string }) => {
     setRa(t.ra);
@@ -575,62 +575,62 @@ setSearchNote('');
   };
 
   // ---- Desenhar área no mapa: clique no centro e arraste até a borda ----
-const pixToSky = (x: number, y: number): [number, number] | null => {
-  try {
-    const r = aladinRef.current?.pix2world(x, y);
-    if (r && Number.isFinite(r[0]) && Number.isFinite(r[1])) return [r[0], r[1]];
-  } catch {}
-  return null;
-};
-const relPos = (e: React.PointerEvent) => {
-  const r = mapBoxRef.current?.getBoundingClientRect();
-  return { x: e.clientX - (r?.left ?? 0), y: e.clientY - (r?.top ?? 0) };
-};
-const onDrawDown = (e: React.PointerEvent<HTMLDivElement>) => {
-  e.currentTarget.setPointerCapture(e.pointerId);
-  const p = relPos(e);
-  drawRef.current = { x0: p.x, y0: p.y };
-  setDrawing({ x0: p.x, y0: p.y, x1: p.x, y1: p.y });
-};
-const onDrawMove = (e: React.PointerEvent<HTMLDivElement>) => {
-  const d = drawRef.current;
-  if (!d) return;
-  const p = relPos(e);
-  setDrawing({ x0: d.x0, y0: d.y0, x1: p.x, y1: p.y });
-};
-const onDrawUp = (e: React.PointerEvent<HTMLDivElement>) => {
-  const d = drawRef.current;
-  drawRef.current = null;
-  setDrawing(null);
-  if (!d) return;
-  const p = relPos(e);
-  const c = pixToSky(d.x0, d.y0);
-  if (!c) {
-    addLog('warn', 'Não consegui converter o ponto da tela em coordenadas (pix2world).');
-    return;
-  }
-  let f = fov; // clique sem arrastar: usa o campo atual
-  if (Math.hypot(p.x - d.x0, p.y - d.y0) >= 8) {
-    const edge = pixToSky(p.x, p.y);
-    if (edge) f = Math.min(FOV_MAX, Math.max(FOV_MIN, Math.round(2 * sepDeg(c[0], c[1], edge[0], edge[1]) * 1000) / 1000));
-  }
-  addLog('info', `Área desenhada: RA ${c[0].toFixed(5)}, Dec ${c[1].toFixed(5)}, campo ${f}°`);
-  setPicked({ ra: c[0], dec: c[1], fov: f });
-  showPick(c[0], c[1], f);
-  setDrawMode(false);
-};
-useEffect(() => {
-  if (!drawMode) return;
-  const h = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      drawRef.current = null;
-      setDrawing(null);
-      setDrawMode(false);
-    }
+  const pixToSky = (x: number, y: number): [number, number] | null => {
+    try {
+      const r = aladinRef.current?.pix2world(x, y);
+      if (r && Number.isFinite(r[0]) && Number.isFinite(r[1])) return [r[0], r[1]];
+    } catch {}
+    return null;
   };
-  window.addEventListener('keydown', h);
-  return () => window.removeEventListener('keydown', h);
-}, [drawMode]);
+  const relPos = (e: React.PointerEvent) => {
+    const r = mapBoxRef.current?.getBoundingClientRect();
+    return { x: e.clientX - (r?.left ?? 0), y: e.clientY - (r?.top ?? 0) };
+  };
+  const onDrawDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const p = relPos(e);
+    drawRef.current = { x0: p.x, y0: p.y };
+    setDrawing({ x0: p.x, y0: p.y, x1: p.x, y1: p.y });
+  };
+  const onDrawMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drawRef.current;
+    if (!d) return;
+    const p = relPos(e);
+    setDrawing({ x0: d.x0, y0: d.y0, x1: p.x, y1: p.y });
+  };
+  const onDrawUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drawRef.current;
+    drawRef.current = null;
+    setDrawing(null);
+    if (!d) return;
+    const p = relPos(e);
+    const c = pixToSky(d.x0, d.y0);
+    if (!c) {
+      addLog('warn', 'Não consegui converter o ponto da tela em coordenadas (pix2world).');
+      return;
+    }
+    let f = fov; // clique sem arrastar: usa o campo atual
+    if (Math.hypot(p.x - d.x0, p.y - d.y0) >= 8) {
+      const edge = pixToSky(p.x, p.y);
+      if (edge) f = Math.min(FOV_MAX, Math.max(FOV_MIN, Math.round(2 * sepDeg(c[0], c[1], edge[0], edge[1]) * 1000) / 1000));
+    }
+    addLog('info', `Área desenhada: RA ${c[0].toFixed(5)}, Dec ${c[1].toFixed(5)}, campo ${f}°`);
+    setPicked({ ra: c[0], dec: c[1], fov: f });
+    showPick(c[0], c[1], f);
+    setDrawMode(false);
+  };
+  useEffect(() => {
+    if (!drawMode) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        drawRef.current = null;
+        setDrawing(null);
+        setDrawMode(false);
+      }
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [drawMode]);
 
   // ---- Zoom e arraste do visualizador de frame ----
   const zoomAt = (factor: number, cx: number, cy: number) => {
@@ -663,30 +663,30 @@ useEffect(() => {
     dragRef.current = null;
   };
 
-// ---- Contadores e estado geral ----
-const requested = frames.filter((f) => tiles[frameKey(f)]);
-const counts = { loading: 0, ok: 0, nocoverage: 0, error: 0 };
-requested.forEach((f) => {
-  counts[tiles[frameKey(f)].status]++;
-});
-const done = counts.ok + counts.nocoverage + counts.error;
-const allDone = requested.length > 0 && done === requested.length;
+  // ---- Contadores e estado geral ----
+  const requested = frames.filter((f) => tiles[frameKey(f)]);
+  const counts = { loading: 0, ok: 0, nocoverage: 0, error: 0 };
+  requested.forEach((f) => {
+    counts[tiles[frameKey(f)].status]++;
+  });
+  const done = counts.ok + counts.nocoverage + counts.error;
+  const allDone = requested.length > 0 && done === requested.length;
 
-let banner: { color: string; text: string };
-const blue = 'bg-blue-900/40 border-blue-700 text-blue-200';
-if (phase === 'searching') banner = { color: blue, text: '⏳ ' + statusMsg };
-else if (phase === 'error') banner = { color: 'bg-red-900/40 border-red-700 text-red-200', text: '❌ ' + statusMsg };
-else if (frames.length === 0) banner = { color: 'bg-gray-800 border-gray-700 text-gray-300', text: statusMsg || 'Pronto.' };
-else if (requested.length === 0)
-  banner = { color: blue, text: `${frames.length} observações encontradas. Abra "Linha do tempo" para ver como esse pedaço do céu muda.` };
-else if (!allDone)
-  banner = { color: blue, text: `⏳ Baixando os recortes visíveis: ${done}/${requested.length} (de ${frames.length})` };
-else if (counts.ok === 0)
-  banner = { color: 'bg-red-900/40 border-red-700 text-red-200', text: '❌ Nenhum recorte funcionou. Veja o log.' };
-else if (counts.error > 0)
-  banner = { color: 'bg-yellow-900/40 border-yellow-700 text-yellow-200', text: `⚠️ ${counts.ok} ok, mas ${counts.error} falharam.` };
-else
-  banner = { color: 'bg-green-900/40 border-green-700 text-green-200', text: `✅ ${counts.ok} de ${frames.length} recortes carregados (${counts.nocoverage} sem cobertura). Role a faixa para ver mais.` };
+  let banner: { color: string; text: string };
+  const blue = 'bg-blue-900/40 border-blue-700 text-blue-200';
+  if (phase === 'searching') banner = { color: blue, text: '⏳ ' + statusMsg };
+  else if (phase === 'error') banner = { color: 'bg-red-900/40 border-red-700 text-red-200', text: '❌ ' + statusMsg };
+  else if (frames.length === 0) banner = { color: 'bg-gray-800 border-gray-700 text-gray-300', text: statusMsg || 'Pronto.' };
+  else if (requested.length === 0)
+    banner = { color: blue, text: `${frames.length} observações encontradas. Abra "Linha do tempo" para ver como esse pedaço do céu muda.` };
+  else if (!allDone)
+    banner = { color: blue, text: `⏳ Baixando os recortes visíveis: ${done}/${requested.length} (de ${frames.length})` };
+  else if (counts.ok === 0)
+    banner = { color: 'bg-red-900/40 border-red-700 text-red-200', text: '❌ Nenhum recorte funcionou. Veja o log.' };
+  else if (counts.error > 0)
+    banner = { color: 'bg-yellow-900/40 border-yellow-700 text-yellow-200', text: `⚠️ ${counts.ok} ok, mas ${counts.error} falharam.` };
+  else
+    banner = { color: 'bg-green-900/40 border-green-700 text-green-200', text: `✅ ${counts.ok} de ${frames.length} recortes carregados (${counts.nocoverage} sem cobertura). Role a faixa para ver mais.` };
   const loading = phase === 'searching';
   const selectedFrame = frames.find((f) => frameKey(f) === selectedKey) || null;
   const selectedTile = selectedKey ? tiles[selectedKey] : undefined;
@@ -700,70 +700,93 @@ else
       : 'bg-blue-900/40 border-blue-700 text-blue-300';
 
   return (
-    <div className="flex flex-col h-screen bg-gray-950 text-white overflow-hidden">
+    // Mobile: a página rola na vertical. Desktop (md+): tela cheia, como antes.
+    <div className="flex flex-col min-h-[100dvh] md:h-screen bg-gray-950 text-white md:overflow-hidden">
       <FeedbackStyles />
       {/* Topo */}
-      <header className="flex flex-wrap items-center justify-between gap-4 p-3 bg-gray-900 border-b border-gray-800 shadow-md">
-        <div className="flex items-center gap-3">
+      <header className="flex flex-col md:flex-row md:flex-wrap md:items-center md:justify-between gap-2 md:gap-4 p-2 md:p-3 bg-gray-900 border-b border-gray-800 shadow-md">
+        <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-3 min-w-0">
           <h1 className="text-base font-bold text-blue-400">SPHEREx Sky Explorer</h1>
-          <div className="hidden md:flex gap-1">
+          {/* No celular os alvos viram uma faixa que rola para o lado */}
+          <div className="flex items-center gap-1 overflow-x-auto md:overflow-visible -mx-2 px-2 md:mx-0 md:px-0 pb-1 md:pb-0">
             {CHALLENGE_TARGETS.map((t) => (
               <button
                 key={t.name}
                 onClick={() => selectTarget(t)}
-                className="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 px-2.5 py-1 rounded transition"
+                className="shrink-0 text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 px-2.5 py-1.5 md:py-1 rounded transition"
               >
                 {t.name}
               </button>
             ))}
 
-            <a href="https://gioperovano.github.io/astrobyte2/ar/">
-            <button className='ml-5 font-bold transition-all bg-amber-600 p-2 rounded-2xl hover:cursor-pointer hover:bg-amber-400 hover:text-black'>AstroByte</button></a>
-            
+            <a href="https://gioperovano.github.io/astrobyte2/ar/" className="shrink-0">
+              <button className="ml-2 md:ml-5 text-xs md:text-base font-bold transition-all bg-amber-600 px-3 py-1.5 md:p-2 rounded-2xl hover:cursor-pointer hover:bg-amber-400 hover:text-black">
+                AstroByte
+              </button>
+            </a>
           </div>
         </div>
 
-        <form onSubmit={handleSearch} className="flex gap-2 items-center text-sm">
-          
-          <div className="flex items-center gap-1 bg-gray-800 border border-gray-700 px-2 py-1 rounded">
+        <form onSubmit={handleSearch} className="flex flex-wrap gap-2 items-center text-sm">
+          <div className="flex flex-1 md:flex-none items-center gap-1 bg-gray-800 border border-gray-700 px-2 py-1 rounded min-w-[7.5rem]">
             <span className="text-[10px] text-gray-400">RA:</span>
-            <input type="text" value={ra} onChange={(e) => setRa(e.target.value)} className="w-20 bg-transparent text-white text-xs outline-none" />
+            <input
+              type="text"
+              inputMode="text"
+              value={ra}
+              onChange={(e) => setRa(e.target.value)}
+              className="w-full md:w-20 min-w-0 bg-transparent text-white text-base md:text-xs outline-none"
+            />
           </div>
-          <div className="flex items-center gap-1 bg-gray-800 border border-gray-700 px-2 py-1 rounded">
+          <div className="flex flex-1 md:flex-none items-center gap-1 bg-gray-800 border border-gray-700 px-2 py-1 rounded min-w-[7.5rem]">
             <span className="text-[10px] text-gray-400">Dec:</span>
-            <input type="text" value={dec} onChange={(e) => setDec(e.target.value)} className="w-20 bg-transparent text-white text-xs outline-none" />
+            <input
+              type="text"
+              inputMode="text"
+              value={dec}
+              onChange={(e) => setDec(e.target.value)}
+              className="w-full md:w-20 min-w-0 bg-transparent text-white text-base md:text-xs outline-none"
+            />
           </div>
-          <div className="flex items-center gap-1 bg-gray-800 border border-gray-700 px-2 py-1 rounded">
+          <div className="flex flex-1 md:flex-none items-center gap-1 bg-gray-800 border border-gray-700 px-2 py-1 rounded min-w-[7.5rem]">
             <span className="text-[10px] text-gray-400">Campo:</span>
-            <select value={fov} onChange={(e) => setFov(parseFloat(e.target.value))} className="bg-transparent text-white text-xs outline-none">
+            <select
+              value={fov}
+              onChange={(e) => setFov(parseFloat(e.target.value))}
+              className="w-full bg-transparent text-white text-base md:text-xs outline-none"
+            >
               {(FOV_OPTIONS.includes(fov) ? FOV_OPTIONS : [...FOV_OPTIONS, fov].sort((a, b) => a - b)).map((o) => (
-  <option key={o} value={o} className="bg-gray-900">
-    {o}°{FOV_OPTIONS.includes(o) ? '' : ' (desenhado)'}
-  </option>
-))}
+                <option key={o} value={o} className="bg-gray-900">
+                  {o}°{FOV_OPTIONS.includes(o) ? '' : ' (desenhado)'}
+                </option>
+              ))}
             </select>
           </div>
-          <button type="submit" disabled={loading} className="bg-blue-600 hover:bg-blue-500 disabled:opacity-60 px-4 py-1 rounded text-xs font-medium transition">
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full md:w-auto bg-blue-600 hover:bg-blue-500 disabled:opacity-60 px-4 py-2 md:py-1 rounded text-xs font-medium transition"
+          >
             {loading ? 'Buscando...' : 'Gerar Mapa'}
           </button>
         </form>
       </header>
 
-      <div className="flex flex-1 overflow-hidden relative">
+      <div className="flex flex-col md:flex-row flex-1 md:overflow-hidden relative">
         {/* Coluna principal */}
-        <main className="flex-1 flex flex-col min-w-0 p-4 gap-3">
+        <main className="flex-1 flex flex-col min-w-0 p-2 md:p-4 gap-3">
           {/* Faixa de status dos frames */}
           <div className={`border rounded px-3 py-2 text-xs flex flex-wrap items-center justify-between gap-2 ${banner.color}`}>
             <span>{banner.text}</span>
-            <div className="flex items-center gap-2 text-[11px] font-mono">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono">
               <span>RA {center.ra}, Dec {center.dec} · {center.fov}°</span>
               {counts.error > 0 && (
-                <button onClick={retryAllErrors} className="bg-blue-600 hover:bg-blue-500 px-3 py-0.5 rounded-full text-white font-sans transition">
+                <button onClick={retryAllErrors} className="bg-blue-600 hover:bg-blue-500 px-3 py-1 md:py-0.5 rounded-full text-white font-sans transition">
                   Tentar erros de novo
                 </button>
               )}
               {phase === 'error' && (
-                <button onClick={() => fetchData(ra, dec, fov)} className="bg-blue-600 hover:bg-blue-500 px-3 py-0.5 rounded-full text-white font-sans transition">
+                <button onClick={() => fetchData(ra, dec, fov)} className="bg-blue-600 hover:bg-blue-500 px-3 py-1 md:py-0.5 rounded-full text-white font-sans transition">
                   Tentar de novo
                 </button>
               )}
@@ -775,34 +798,34 @@ else
             <div className="flex rounded overflow-hidden border border-gray-700">
               <button
                 onClick={() => setMode('map')}
-                className={`px-3 py-1 transition ${mode === 'map' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
+                className={`px-3 py-2 md:py-1 transition ${mode === 'map' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
               >
                 🗺️ Mapa do céu
               </button>
 
               <button
-  onClick={() => setMode('video')}
-  className={`px-3 py-1 transition disabled:opacity-40 ${mode === 'video' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
->
- 🎬 Linha do tempo{prog.total > 0 ? ` · ${prog.done}/${prog.total}` : ''}
-{prog.pending > 0 && (
-  <span className="ml-1.5 inline-block h-2.5 w-2.5 rounded-full border-2 border-white/40 border-t-white animate-spin align-middle" />
-)}
-</button>
+                onClick={() => setMode('video')}
+                className={`px-3 py-2 md:py-1 transition disabled:opacity-40 ${mode === 'video' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
+              >
+                🎬 Linha do tempo{prog.total > 0 ? ` · ${prog.done}/${prog.total}` : ''}
+                {prog.pending > 0 && (
+                  <span className="ml-1.5 inline-block h-2.5 w-2.5 rounded-full border-2 border-white/40 border-t-white animate-spin align-middle" />
+                )}
+              </button>
             </div>
 
-            <div className="flex items-center gap-1 bg-gray-800 border border-gray-700 px-2 py-1 rounded">
+            <div className="flex flex-wrap items-center gap-1 bg-gray-800 border border-gray-700 px-2 py-1 rounded">
               <span className="text-[10px] text-gray-400">Fundo do mapa:</span>
               <button
-  onClick={() => { setMode('map'); setDrawMode((d) => !d); }}
-  disabled={mapState !== 'ready'}
-  className={`px-3 py-1 rounded border text-xs transition disabled:opacity-40 ${
-    drawMode ? 'bg-cyan-600 border-cyan-400 text-white' : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'
-  }`}
-  title="Clique no centro da área e arraste até a borda"
->
-  ⭕ Desenhar área
-</button>
+                onClick={() => { setMode('map'); setDrawMode((d) => !d); }}
+                disabled={mapState !== 'ready'}
+                className={`px-3 py-1.5 md:py-1 rounded border text-xs transition disabled:opacity-40 ${
+                  drawMode ? 'bg-cyan-600 border-cyan-400 text-white' : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'
+                }`}
+                title="Clique no centro da área e arraste até a borda"
+              >
+                ⭕ Desenhar área
+              </button>
               <select value={band} onChange={(e) => setBand(e.target.value)} className="bg-transparent text-white text-xs outline-none">
                 {SURVEYS.map((b) => (
                   <option key={b.id} value={b.id} className="bg-gray-900">
@@ -816,52 +839,62 @@ else
               {mapState === 'ready' ? '🟢' : mapState === 'error' ? '🔴' : '🟡'} Aladin: {mapMsg}
             </span>
             {mapState === 'error' && (
-              <button onClick={() => initAladin()} className="bg-blue-600 hover:bg-blue-500 px-3 py-0.5 rounded-full text-white transition">
+              <button onClick={() => initAladin()} className="bg-blue-600 hover:bg-blue-500 px-3 py-1 md:py-0.5 rounded-full text-white transition">
                 Tentar Aladin de novo
               </button>
             )}
           </div>
 
           {requested.length > 0 && !allDone && (
-  <div className="h-1.5 w-full bg-gray-800 rounded overflow-hidden">
-    <div className="h-full bg-blue-500 transition-all duration-300" style={{ width: `${(done / requested.length) * 100}%` }} />
-  </div>
-)}
+            <div className="h-1.5 w-full bg-gray-800 rounded overflow-hidden">
+              <div className="h-full bg-blue-500 transition-all duration-300" style={{ width: `${(done / requested.length) * 100}%` }} />
+            </div>
+          )}
 
-          {/* Área do visualizador: mapa Aladin e frame ficam montados, só alterna a visibilidade */}
-          <div className="flex-1 min-h-0 relative bg-black rounded-lg border border-gray-800 overflow-hidden">
+          {/* Área do visualizador: mapa Aladin e frame ficam montados, só alterna a visibilidade.
+              Mobile: altura própria (65% da tela; 90% na linha do tempo). Desktop: ocupa o espaço que sobra. */}
+          <div className={`${mode === 'video' ? 'h-[90dvh]' : 'h-[65dvh]'} min-h-[22rem] md:h-auto md:min-h-0 md:flex-1 relative bg-black rounded-lg border border-gray-800 overflow-hidden`}>
             {/* Mapa Aladin */}
             <div className={`absolute inset-0 ${mode === 'map' ? '' : 'invisible pointer-events-none'}`}>
               <div ref={mapBoxRef} className="absolute inset-0">
-  <div id="aladin-lite-div" style={{ width: '100%', height: '100%' }} />
-</div>
-{drawMode && (
-  <div
-    className="absolute inset-0 z-20 cursor-crosshair touch-none select-none"
-    onPointerDown={onDrawDown}
-    onPointerMove={onDrawMove}
-    onPointerUp={onDrawUp}
-    onPointerCancel={() => { drawRef.current = null; setDrawing(null); }}
-  >
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-gray-900/90 border border-cyan-700 text-cyan-200 text-xs px-3 py-1.5 rounded-full pointer-events-none">
-      Clique no centro e arraste até a borda · Esc cancela
-    </div>
-    {drawing && (
-      <svg className="absolute inset-0 w-full h-full pointer-events-none">
-        <circle
-          cx={drawing.x0}
-          cy={drawing.y0}
-          r={Math.hypot(drawing.x1 - drawing.x0, drawing.y1 - drawing.y0)}
-          fill="rgba(34,211,238,0.12)"
-          stroke="#22d3ee"
-          strokeWidth={2}
-          strokeDasharray="6 4"
-        />
-        <line x1={drawing.x0} y1={drawing.y0} x2={drawing.x1} y2={drawing.y1} stroke="#22d3ee" strokeWidth={1} />
-      </svg>
-    )}
-  </div>
-)}
+                <div id="aladin-lite-div" style={{ width: '100%', height: '100%' }} />
+              </div>
+              {drawMode && (
+                <div
+                  className="absolute inset-0 z-20 cursor-crosshair touch-none select-none"
+                  onPointerDown={onDrawDown}
+                  onPointerMove={onDrawMove}
+                  onPointerUp={onDrawUp}
+                  onPointerCancel={() => { drawRef.current = null; setDrawing(null); }}
+                >
+                  <div className="absolute top-3 left-1/2 -translate-x-1/2 w-max max-w-[92%] text-center bg-gray-900/90 border border-cyan-700 text-cyan-200 text-xs px-3 py-1.5 rounded-full pointer-events-none">
+                    Toque no centro e arraste até a borda <span className="hidden md:inline">· Esc cancela</span>
+                  </div>
+                  {drawing && (
+                    <svg className="absolute inset-0 w-full h-full pointer-events-none">
+                      <circle
+                        cx={drawing.x0}
+                        cy={drawing.y0}
+                        r={Math.hypot(drawing.x1 - drawing.x0, drawing.y1 - drawing.y0)}
+                        fill="rgba(34,211,238,0.12)"
+                        stroke="#22d3ee"
+                        strokeWidth={2}
+                        strokeDasharray="6 4"
+                      />
+                      <line x1={drawing.x0} y1={drawing.y0} x2={drawing.x1} y2={drawing.y1} stroke="#22d3ee" strokeWidth={1} />
+                    </svg>
+                  )}
+                  {/* Botão para cancelar o desenho no celular (não tem tecla Esc) */}
+                  <button
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onPointerUp={(e) => e.stopPropagation()}
+                    onClick={() => { drawRef.current = null; setDrawing(null); setDrawMode(false); }}
+                    className="md:hidden absolute bottom-3 left-3 bg-gray-900/90 border border-gray-600 text-gray-200 text-xs px-3 py-1.5 rounded-full"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              )}
               {mapState !== 'ready' && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/80 text-center px-6 z-10">
                   {mapState === 'loading' ? (
@@ -880,41 +913,50 @@ else
                   )}
                 </div>
               )}
+
+              {/* Cartão da área escolhida (agora fora do botão da linha do tempo) */}
+              {picked && (
+                <div className="absolute top-3 left-3 z-10 max-w-[calc(100%-1.5rem)] bg-gray-900/95 border border-cyan-800 rounded p-3 text-xs flex flex-col gap-2">
+                  <span className="font-mono text-gray-200">RA {picked.ra.toFixed(5)} · Dec {picked.dec.toFixed(5)}</span>
+                  <span className="text-gray-400">Raio {((picked.fov / 2) * 60).toFixed(1)}′ · recorte de {picked.fov}°</span>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => {
+                        const r = picked.ra.toFixed(6);
+                        const d = picked.dec.toFixed(6);
+                        setRa(r);
+                        setDec(d);
+                        setFov(picked.fov);
+                        fetchData(r, d, picked.fov);
+                      }}
+                      className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 md:py-1 rounded"
+                    >
+                      Gerar linha do tempo aqui
+                    </button>
+                    <button
+                      onClick={() => { setPicked(null); showPick(0, 0, null); }}
+                      className="bg-gray-800 hover:bg-gray-700 px-3 py-1.5 md:py-1 rounded"
+                    >
+                      cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {frames.length > 0 && (
-  <button
-    onClick={() => setMode('video')}
-    className="absolute bottom-3 right-3 z-10 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium px-4 py-2 rounded-full shadow"
-  >
-  {picked && (
-  <div className="absolute top-3 left-3 z-10 bg-gray-900/95 border border-cyan-800 rounded p-3 text-xs flex flex-col gap-2">
-    <span className="font-mono text-gray-200">RA {picked.ra.toFixed(5)} · Dec {picked.dec.toFixed(5)}</span>
-    <span className="text-gray-400">Raio {((picked.fov / 2) * 60).toFixed(1)}′ · recorte de {picked.fov}°</span>
-    <div className="flex gap-2">
-      <button
-        onClick={() => {
-          const r = picked.ra.toFixed(6);
-          const d = picked.dec.toFixed(6);
-          setRa(r);
-          setDec(d);
-          setFov(picked.fov);
-          fetchData(r, d, picked.fov);
-        }}
-        className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded"
-      >
-        Gerar linha do tempo aqui
-      </button>
-      <button onClick={() => { setPicked(null); showPick(0, 0, null); }} className="bg-gray-800 hover:bg-gray-700 px-3 py-1 rounded">
-        cancelar
-      </button>
-    </div>
-  </div>
-)}
-▶ Ver como esse pedaço do céu muda no tempo{prog.total > 0 ? ` (${prog.done}/${prog.total} prontos)` : ''}  </button>
-)}
+                <button
+                  onClick={() => setMode('video')}
+                  className="absolute bottom-3 right-3 z-10 max-w-[calc(100%-1.5rem)] bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium px-4 py-2 rounded-full shadow"
+                >
+                  <span className="md:hidden">▶ Linha do tempo</span>
+                  <span className="hidden md:inline">▶ Ver como esse pedaço do céu muda no tempo</span>
+                  {prog.total > 0 ? ` (${prog.done}/${prog.total} prontos)` : ''}
+                </button>
+              )}
               {mapState === 'ready' && (
-            <div className="absolute top-3 right-3 max-w-xs text-right text-[10px] text-gray-300 font-mono pointer-events-none z-10 drop-shadow bg-gray-950/70 rounded px-2 py-1">
-  Fundo: HiPS do CDS · círculo amarelo = área do recorte dos frames
-</div>
+                <div className="hidden md:block absolute top-3 right-3 max-w-xs text-right text-[10px] text-gray-300 font-mono pointer-events-none z-10 drop-shadow bg-gray-950/70 rounded px-2 py-1">
+                  Fundo: HiPS do CDS · círculo amarelo = área do recorte dos frames
+                </div>
               )}
             </div>
 
@@ -957,108 +999,111 @@ else
                         <span className="text-xs">Montando o frame...</span>
                       </div>
                     ) : (
-                      <span className="text-xs">Sem frame para mostrar. Veja o log ao lado.</span>
+                      <span className="text-xs">Sem frame para mostrar. Veja o log abaixo.</span>
                     )}
                   </div>
                 )}
               </div>
 
               <div className="absolute top-3 right-3 flex flex-col gap-1">
-                <button onClick={() => zoomButton(1.5)} className="w-8 h-8 bg-gray-900/90 hover:bg-gray-800 border border-gray-700 rounded text-lg leading-none">+</button>
-                <button onClick={() => zoomButton(1 / 1.5)} className="w-8 h-8 bg-gray-900/90 hover:bg-gray-800 border border-gray-700 rounded text-lg leading-none">−</button>
-                <button onClick={() => setView({ s: 1, x: 0, y: 0 })} className="w-8 h-8 bg-gray-900/90 hover:bg-gray-800 border border-gray-700 rounded text-[10px]">1:1</button>
+                <button onClick={() => zoomButton(1.5)} className="w-10 h-10 md:w-8 md:h-8 bg-gray-900/90 hover:bg-gray-800 border border-gray-700 rounded text-lg leading-none">+</button>
+                <button onClick={() => zoomButton(1 / 1.5)} className="w-10 h-10 md:w-8 md:h-8 bg-gray-900/90 hover:bg-gray-800 border border-gray-700 rounded text-lg leading-none">−</button>
+                <button onClick={() => setView({ s: 1, x: 0, y: 0 })} className="w-10 h-10 md:w-8 md:h-8 bg-gray-900/90 hover:bg-gray-800 border border-gray-700 rounded text-[10px]">1:1</button>
               </div>
-              <div className="absolute bottom-2 left-3 text-[10px] text-gray-500 font-mono pointer-events-none">
-                zoom {view.s.toFixed(1)}x · roda do mouse = zoom · arraste = mover · círculo = alvo
+              <div className="absolute bottom-2 left-3 right-3 text-[10px] text-gray-500 font-mono pointer-events-none">
+                zoom {view.s.toFixed(1)}x
+                <span className="hidden md:inline"> · roda do mouse = zoom · arraste = mover · círculo = alvo</span>
+                <span className="md:hidden"> · botões + / − · arraste = mover</span>
               </div>
             </div>
+
             <div className={`absolute inset-0 ${mode === 'video' ? '' : 'invisible pointer-events-none'}`}>
               <TimelinePlayer
-  frames={frames}
-  center={center}
-  active={frames.length > 0}
-  visible={mode === 'video'}
-  searching={phase === 'searching'}
-  emptyMessage={
-    phase === 'error'
-      ? statusMsg
-      : `Nenhuma observação encontrada para essa coordenada.${searchNote ? ' ' + searchNote : ''}`
-  }
-  selectedKey={selectedKey}
-  onSelect={(k) => { userPickedRef.current = true; setSelectedKey(k); }}
-/>
+                frames={frames}
+                center={center}
+                active={frames.length > 0}
+                visible={mode === 'video'}
+                searching={phase === 'searching'}
+                emptyMessage={
+                  phase === 'error'
+                    ? statusMsg
+                    : `Nenhuma observação encontrada para essa coordenada.${searchNote ? ' ' + searchNote : ''}`
+                }
+                selectedKey={selectedKey}
+                onSelect={(k) => { userPickedRef.current = true; setSelectedKey(k); }}
+              />
             </div>
             {phase === 'searching' && (
-  <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-black/50 text-center px-6 pointer-events-none">
-    <Radar size={72} />
-    <span className="text-sm text-gray-200">Buscando observações do SPHEREx para esse ponto…</span>
-    <span className="text-[11px] text-gray-400 font-mono">{searchSecs}s · consultando a IRSA (até 30 s se estiver lenta)</span>
-  </div>
-)}
-{mode !== 'video' && frames.length > 0 && prog.pending > 0 && (
-  <div className="absolute top-3 right-3 z-20 w-60 bg-gray-900/95 border border-gray-700 rounded p-2.5 flex flex-col gap-1.5">
-    <span className="text-[11px] text-gray-200">Preparando a linha do tempo… {prog.done}/{prog.total}</span>
-    <Bar value={prog.total ? prog.done / prog.total : 0} />
-    <span className="text-[10px] text-gray-500">
-      {prog.finished >= 2 ? `falta ${fmtEta((prog.elapsedMs / prog.finished) * prog.pending)}` : 'cada frame leva 10–25 s'}
-    </span>
-  </div>
-)}
+              <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-black/50 text-center px-6 pointer-events-none">
+                <Radar size={72} />
+                <span className="text-sm text-gray-200">Buscando observações do SPHEREx para esse ponto…</span>
+                <span className="text-[11px] text-gray-400 font-mono">{searchSecs}s · consultando a IRSA (até 30 s se estiver lenta)</span>
+              </div>
+            )}
+            {mode !== 'video' && frames.length > 0 && prog.pending > 0 && (
+              <div className="absolute top-3 right-3 z-20 w-44 md:w-60 bg-gray-900/95 border border-gray-700 rounded p-2.5 flex flex-col gap-1.5">
+                <span className="text-[11px] text-gray-200">Preparando a linha do tempo… {prog.done}/{prog.total}</span>
+                <Bar value={prog.total ? prog.done / prog.total : 0} />
+                <span className="text-[10px] text-gray-500">
+                  {prog.finished >= 2 ? `falta ${fmtEta((prog.elapsedMs / prog.finished) * prog.pending)}` : 'cada frame leva 10–25 s'}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Faixa de frames: cada thumbnail só baixa quando se aproxima da área visível */}
-<div ref={stripRef} className="h-28 shrink-0 overflow-x-auto overflow-y-hidden">
-  <div className="flex gap-2 h-full">
-    {stripFrames.map((frame) => {
-      const key = frameKey(frame);
-      const tile = tiles[key];
-      const isSelected = selectedKey === key && mode === 'frame';
-      const idx = frames.indexOf(frame);
+          <div ref={stripRef} className="h-28 shrink-0 overflow-x-auto overflow-y-hidden">
+            <div className="flex gap-2 h-full">
+              {stripFrames.map((frame) => {
+                const key = frameKey(frame);
+                const tile = tiles[key];
+                const isSelected = selectedKey === key && mode === 'frame';
+                const idx = frames.indexOf(frame);
 
-      return (
-        <LazyCell
-          key={key}
-          rootRef={stripRef}
-          onEnter={() => enterTile(frame)}
-          onLeave={() => cancelQueued(key)}
-          onClick={() => pickFrame(key)}
-          className={`shrink-0 w-24 flex flex-col gap-1 p-1 rounded border cursor-pointer transition ${
-            isSelected ? 'border-blue-500 bg-gray-800' : 'border-gray-800 bg-gray-900 hover:border-gray-600'
-          }`}
-        >
-          <div className="flex-1 min-h-0 bg-black rounded overflow-hidden flex items-center justify-center">
-            {tile?.status === 'ok' && tile.src && (
-              <img src={tile.src} alt={`Frame ${idx + 1}`} draggable={false} decoding="async" className="w-full h-full object-cover" style={{ imageRendering: 'pixelated' }} />
-            )}
-            {tile?.status === 'loading' && <div className="h-4 w-4 rounded-full border-2 border-gray-700 border-t-blue-500 animate-spin" />}
-            {!tile && <span className="text-[9px] text-gray-700">…</span>}
-            {tile?.status === 'error' && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  retryTile(frame);
-                }}
-                className="text-[10px] text-red-400 hover:text-red-300"
-              >
-                ↻ erro
-              </button>
-            )}
+                return (
+                  <LazyCell
+                    key={key}
+                    rootRef={stripRef}
+                    onEnter={() => enterTile(frame)}
+                    onLeave={() => cancelQueued(key)}
+                    onClick={() => pickFrame(key)}
+                    className={`shrink-0 w-24 flex flex-col gap-1 p-1 rounded border cursor-pointer transition ${
+                      isSelected ? 'border-blue-500 bg-gray-800' : 'border-gray-800 bg-gray-900 hover:border-gray-600'
+                    }`}
+                  >
+                    <div className="flex-1 min-h-0 bg-black rounded overflow-hidden flex items-center justify-center">
+                      {tile?.status === 'ok' && tile.src && (
+                        <img src={tile.src} alt={`Frame ${idx + 1}`} draggable={false} decoding="async" className="w-full h-full object-cover" style={{ imageRendering: 'pixelated' }} />
+                      )}
+                      {tile?.status === 'loading' && <div className="h-4 w-4 rounded-full border-2 border-gray-700 border-t-blue-500 animate-spin" />}
+                      {!tile && <span className="text-[9px] text-gray-700">…</span>}
+                      {tile?.status === 'error' && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            retryTile(frame);
+                          }}
+                          className="text-[10px] text-red-400 hover:text-red-300"
+                        >
+                          ↻ erro
+                        </button>
+                      )}
+                    </div>
+                    <div className="text-[9px] text-gray-400 font-mono truncate">
+                      #{idx + 1} · {frame.date || frame.energy_bandpassname || 'IR'}
+                    </div>
+                  </LazyCell>
+                );
+              })}
+            </div>
           </div>
-          <div className="text-[9px] text-gray-400 font-mono truncate">
-            #{idx + 1} · {frame.date || frame.energy_bandpassname || 'IR'}
-          </div>
-        </LazyCell>
-      );
-    })}
-  </div>
-</div>
         </main>
 
-        {/* Painel lateral */}
-        <aside className="w-80 bg-gray-900/95 border-l border-gray-800 flex flex-col z-10 p-4 gap-3 backdrop-blur min-h-0">
+        {/* Painel lateral: no celular vai para baixo e cresce com o conteúdo */}
+        <aside className="w-full md:w-80 bg-gray-900/95 border-t md:border-t-0 md:border-l border-gray-800 flex flex-col z-10 p-3 md:p-4 gap-3 backdrop-blur md:min-h-0">
           <div>
             <h3 className="font-semibold text-sm text-gray-200">Frame selecionado</h3>
-            <p className="text-xs text-gray-400 mt-0.5">Clique num frame da faixa para ver o recorte dele.</p>
+            <p className="text-xs text-gray-400 mt-0.5">Toque num frame da faixa para ver o recorte dele.</p>
           </div>
 
           {selectedFrame ? (
@@ -1094,13 +1139,13 @@ else
           <div className="flex-1 min-h-0 flex flex-col border-t border-gray-800 pt-3">
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-semibold text-xs text-gray-300">Log de debug</h3>
-              <div className="flex gap-2 text-[10px]">
+              <div className="flex gap-3 text-[10px]">
                 <button onClick={() => setShowLog((s) => !s)} className="text-gray-400 hover:text-white">{showLog ? 'ocultar' : 'mostrar'}</button>
                 <button onClick={() => setLog([])} className="text-gray-400 hover:text-white">limpar</button>
               </div>
             </div>
             {showLog && (
-              <div className="flex-1 min-h-0 overflow-y-auto bg-black/60 border border-gray-800 rounded p-2 font-mono text-[10px] leading-relaxed">
+              <div className="h-48 md:h-auto md:flex-1 md:min-h-0 overflow-y-auto bg-black/60 border border-gray-800 rounded p-2 font-mono text-[10px] leading-relaxed">
                 {log.length === 0 && <span className="text-gray-600">Sem eventos ainda.</span>}
                 {log.map((l, i) => (
                   <div key={i} className={LOG_COLORS[l.level]}>
@@ -1113,7 +1158,8 @@ else
           </div>
 
           <div className="text-[10px] text-center text-gray-500 border-t border-gray-800 pt-3">
-SPHEREx: IRSA/IPAC · Fundo do mapa: CDS Strasbourg          </div>
+            SPHEREx: IRSA/IPAC · Fundo do mapa: CDS Strasbourg
+          </div>
         </aside>
       </div>
     </div>

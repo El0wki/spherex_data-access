@@ -1,7 +1,7 @@
 // src/app/components/TimelinePlayer.tsx
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { keyOf, detOf, timeOf, mjdToDate, sortByTime, summarize, renderImage } from '../../lib/timeline';
 import { setTarget, want, retryErrors, getSlot, progress, useFrameStore, type Loaded } from '../../lib/frameStore';
 import { Radar, Bar, Skeleton, Steps, useElapsed, fmtEta } from './Feedback';
@@ -86,7 +86,84 @@ function Thumb({ loaded, gain }: { loaded: Loaded; gain: number }) {
   );
 }
 
-export default function TimelinePlayer({
+// [perf] Traço do eixo de tempo memoizado: um clique só re-renderiza o que perdeu e o que ganhou o destaque
+const Tick = memo(function Tick({
+  f,
+  left,
+  isCur,
+  status,
+  onPick,
+}: {
+  f: any;
+  left: number;
+  isCur: boolean;
+  status: Status;
+  onPick: (f: any) => void;
+}) {
+  return (
+    <button
+      onClick={() => onPick(f)}
+      title={`${f.date || 'sem data'} · ${status}`}
+      className={`absolute -translate-x-1/2 rounded-sm ${
+        isCur
+          ? 'bg-white top-0 h-8 w-[4px] md:w-[3px] z-10'
+          : `${TICK_COLOR[status]} top-0.5 h-7 w-[7px] md:w-[5px]`
+      }`}
+      style={{ left: `${left * 100}%` }}
+    />
+  );
+});
+
+// [perf] Cartão da faixa de miniaturas memoizado (só recebe valores primitivos e o `loaded`)
+const StripItem = memo(function StripItem({
+  f,
+  i,
+  isCur,
+  status,
+  loaded,
+  gain,
+  onPick,
+}: {
+  f: any;
+  i: number;
+  isCur: boolean;
+  status: Status;
+  loaded?: Loaded;
+  gain: number;
+  onPick: (f: any) => void;
+}) {
+  return (
+    <div
+      data-i={i}
+      onClick={() => onPick(f)}
+      className={`shrink-0 w-16 md:w-20 flex flex-col gap-0.5 p-0.5 rounded border ${
+        isCur ? 'border-blue-500 bg-gray-800' : 'border-gray-800 bg-gray-900'
+      } ${status === 'ok' ? 'cursor-pointer hover:border-gray-600' : 'opacity-80'}`}
+    >
+      <div className="h-14 md:h-20 bg-black rounded overflow-hidden flex items-center justify-center p-0.5">
+        {loaded ? (
+          <div className="sx-fade w-full h-full">
+            <Thumb loaded={loaded} gain={gain} />
+          </div>
+        ) : status === 'err' ? (
+          <span className="text-[9px] text-red-400">erro</span>
+        ) : status === 'nocov' ? (
+          <span className="text-[9px] text-gray-600">sem cob.</span>
+        ) : (
+          <div className="relative w-full h-full">
+            <Skeleton className="absolute inset-0" />
+            {status === 'loading' && (
+              <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-4 w-4 rounded-full border-2 border-gray-600 border-t-blue-400 animate-spin" />
+            )}
+          </div>
+        )}
+      </div>
+      <div className="text-[9px] text-gray-400 font-mono truncate">{f.date || `#${i + 1}`}</div>
+    </div>
+  );
+});
+
+function TimelinePlayer({
   frames,
   center,
   active,
@@ -217,10 +294,15 @@ export default function TimelinePlayer({
   const curKey = curFrame ? keyOf(curFrame) : '';
   const curLoaded = curKey ? getSlot(curKey)?.loaded : undefined;
 
-  // Mantém a seleção dentro do que está no vídeo
-  useEffect(() => {
-    if (ready.length && curIdx < 0) onSelectRef.current(keyOf(ready[0]));
-  }, [ready, curIdx]);
+ // Mantém a seleção dentro do que está no vídeo
+useEffect(() => {
+  if (!ready.length || curIdx >= 0) return;
+  // Se a seleção é de outro detector, o efeito acima vai trocar o `det`: não briga com ele
+  const selFrame = frames.find((f) => keyOf(f) === selRef.current);
+  if (selFrame && detOf(selFrame) !== det) return;
+  onSelectRef.current(keyOf(ready[0]));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [ready, curIdx, det]);
 
   // Retângulo comum: maior região sem buracos em todos os frames prontos (ou em 80% deles, se ficar pequena demais)
   const crop = useMemo<Crop | null>(() => {
@@ -299,7 +381,10 @@ export default function TimelinePlayer({
   };
 
   // Desenho na tela
+  // [perf] Com a aba escondida não desenha (antes redesenhava a cada frame que chegava ao store).
+  // Ao abrir a aba, `visible` muda e o efeito roda uma vez.
   useEffect(() => {
+    if (!visible) return;
     const cv = canvasRef.current;
     if (!cv || !crop) return;
     const img = buildImage(cur);
@@ -320,7 +405,7 @@ export default function TimelinePlayer({
       ctx.stroke();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [curKey, mode, gain, ready, stack, crop, showMark]);
+  }, [visible, curKey, mode, gain, ready, stack, crop, showMark]);
 
   // Mantém a miniatura atual visível na faixa (só com a aba na tela)
   useEffect(() => {
@@ -423,6 +508,19 @@ export default function TimelinePlayer({
     setPlaying(false);
     onSelect(keyOf(f));
   };
+  // [perf] Versão estável de `pick` para os itens memoizados (sempre chama a mais nova)
+  const pickRef = useRef(pick);
+  pickRef.current = pick;
+  const onPick = useCallback((f: any) => pickRef.current(f), []);
+
+
+  // Troca de detector pelo menu: já seleciona o primeiro frame dele (o efeito acima não faz isso mais)
+const changeDet = (d: string) => {
+  setDet(d);
+  const first = sortByTime(frames.filter((f) => detOf(f) === d))[0];
+  if (first) onSelectRef.current(keyOf(first));
+};
+
   const goto = (i: number) => {
     if (!ready.length) return;
     onSelect(keyOf(ready[Math.max(0, Math.min(ready.length - 1, i))]));
@@ -448,8 +546,8 @@ export default function TimelinePlayer({
       {/* Controles */}
       <div className="flex flex-wrap items-center gap-2 p-2 text-xs bg-gray-900/90 border-b border-gray-800">
         <select
-          value={det}
-          onChange={(e) => setDet(e.target.value)}
+  value={det}
+  onChange={(e) => changeDet(e.target.value)}
           className={sel}
           title="Cada detector cobre uma faixa de cor do infravermelho. Compare frames do mesmo detector."
         >
@@ -625,23 +723,12 @@ export default function TimelinePlayer({
           {axis.bands.map((b, i) => (
             <div key={i} className="absolute top-2.5 h-3 rounded bg-gray-800" style={{ left: `${b.l * 100}%`, width: `${Math.max(b.w * 100, 0.8)}%` }} />
           ))}
-          {list.map((f, i) => {
-            const k = keyOf(f);
-            const isCur = k === curKey;
-            return (
-              <button
-                key={k}
-                onClick={() => pick(f)}
-                title={`${f.date || 'sem data'} · ${statusOf(f)}`}
-                className={`absolute -translate-x-1/2 rounded-sm ${
-                  isCur
-                    ? 'bg-white top-0 h-8 w-[4px] md:w-[3px] z-10'
-                    : `${TICK_COLOR[statusOf(f)]} top-0.5 h-7 w-[7px] md:w-[5px]`
-                }`}
-                style={{ left: `${axis.pos[i] * 100}%` }}
-              />
-            );
-          })}
+          {/* [perf] Com a aba escondida não monta os ~400 traços */}
+          {visible &&
+            list.map((f, i) => {
+              const k = keyOf(f);
+              return <Tick key={k} f={f} left={axis.pos[i]} isCur={k === curKey} status={statusOf(f)} onPick={onPick} />;
+            })}
         </div>
         <div className="flex justify-between text-[10px] text-gray-500 font-mono mx-1">
           <span>{summary.t0 !== null ? mjdToDate(summary.t0) : ''}</span>
@@ -686,42 +773,27 @@ export default function TimelinePlayer({
 
       {/* Miniaturas (mesmo dado do vídeo, em ordem de data) */}
       <div ref={stripRef} className="h-24 md:h-28 shrink-0 flex gap-1.5 overflow-x-auto overflow-y-hidden p-2 bg-gray-950 border-t border-gray-800">
-        {list.map((f, i) => {
-          const k = keyOf(f);
-          const s = getSlot(k);
-          const status = statusOf(f);
-          return (
-            <div
-              key={k}
-              data-i={i}
-              onClick={() => pick(f)}
-              className={`shrink-0 w-16 md:w-20 flex flex-col gap-0.5 p-0.5 rounded border ${
-                k === curKey ? 'border-blue-500 bg-gray-800' : 'border-gray-800 bg-gray-900'
-              } ${status === 'ok' ? 'cursor-pointer hover:border-gray-600' : 'opacity-80'}`}
-            >
-              <div className="h-14 md:h-20 bg-black rounded overflow-hidden flex items-center justify-center p-0.5">
-                {s?.status === 'ok' ? (
-                  <div className="sx-fade w-full h-full">
-                    <Thumb loaded={s.loaded!} gain={gain} />
-                  </div>
-                ) : status === 'err' ? (
-                  <span className="text-[9px] text-red-400">erro</span>
-                ) : status === 'nocov' ? (
-                  <span className="text-[9px] text-gray-600">sem cob.</span>
-                ) : (
-                  <div className="relative w-full h-full">
-                    <Skeleton className="absolute inset-0" />
-                    {status === 'loading' && (
-                      <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-4 w-4 rounded-full border-2 border-gray-600 border-t-blue-400 animate-spin" />
-                    )}
-                  </div>
-                )}
-              </div>
-              <div className="text-[9px] text-gray-400 font-mono truncate">{f.date || `#${i + 1}`}</div>
-            </div>
-          );
-        })}
+        {/* [perf] Com a aba escondida não monta os ~400 cartões */}
+        {visible &&
+          list.map((f, i) => {
+            const k = keyOf(f);
+            const s = getSlot(k);
+            return (
+              <StripItem
+                key={k}
+                f={f}
+                i={i}
+                isCur={k === curKey}
+                status={statusOf(f)}
+                loaded={s?.status === 'ok' ? s.loaded : undefined}
+                gain={gain}
+                onPick={onPick}
+              />
+            );
+          })}
       </div>
     </div>
   );
 }
+
+export default memo(TimelinePlayer);

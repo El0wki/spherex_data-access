@@ -1,5 +1,9 @@
 // app/api/align/route.ts
 import { NextResponse } from 'next/server';
+import fs from 'node:fs';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { PNG } from 'pngjs';
 import { D2R, R2D, skyToTangent, tangentToSky, gridToTangentDeg } from '../../../lib/sky';
 import { acquire, release, fetchBuffer } from '../../../lib/irsa';
 
@@ -13,10 +17,104 @@ type Wcs = {
   sipB: Sip;
   ctype: string;
 };
+type Aligned = { buf: Buffer; info: string };
 
-// ---- Cache dos frames já alinhados (~0,3 MB cada com o campo padrão) ----
-const cache = new Map<string, { buf: Buffer; info: string }>();
-const CACHE_MAX = 150;
+// A chave do cache depende só de url+ra+dec+fov+scale, e a url do FITS já traz a versão do processamento.
+// Se mudar o contraste do toPng(), suba PNG_VERSION (e o &v= no front) para invalidar os caches.
+const PNG_VERSION = 1;
+const CACHE_HDR = 'public, max-age=31536000, immutable';
+
+// Reprojeção: calcula o mapeamento exato só a cada STEP pixels de saída e interpola entre eles
+const STEP = 4;
+
+// ---- Cache em memória, limitado por bytes (e não por número de itens) ----
+const MEM_BUDGET = 96 * 1024 * 1024;
+const cache = new Map<string, Aligned>();
+const pngMem = new Map<string, Buffer>();
+let memBytes = 0;
+const NOCOV = new Set<string>(); // frames que já sabemos que não cobrem a região
+
+function memTrim() {
+  while (memBytes > MEM_BUDGET && (cache.size || pngMem.size)) {
+    const m = cache.size >= pngMem.size ? cache : pngMem;
+    const k = m.keys().next().value as string;
+    const v = m.get(k)!;
+    memBytes -= (v as any).buf ? (v as Aligned).buf.length : (v as Buffer).length;
+    m.delete(k);
+  }
+}
+const memPut = (key: string, v: Aligned) => {
+  const old = cache.get(key);
+  if (old) memBytes -= old.buf.length;
+  cache.set(key, v);
+  memBytes += v.buf.length;
+  memTrim();
+};
+const pngPutMem = (key: string, b: Buffer) => {
+  const old = pngMem.get(key);
+  if (old) memBytes -= old.length;
+  pngMem.set(key, b);
+  memBytes += b.length;
+  memTrim();
+};
+
+// Cache em disco: sobrevive a reinícios e ao hot reload do next dev
+const DISK_DIR = path.join(process.cwd(), '.cache', 'align');
+const diskFile = (key: string) => path.join(DISK_DIR, createHash('sha1').update(key).digest('hex') + '.bin');
+const nocovFile = (key: string) => diskFile(key).replace(/\.bin$/, '.nocov');
+const pngFile = (key: string) => diskFile(key).replace(/\.bin$/, `.v${PNG_VERSION}.png`);
+
+function diskGet(key: string): Aligned | null {
+  try {
+    const f = fs.readFileSync(diskFile(key));
+    const len = f.readUInt32BE(0);
+    return { info: f.toString('utf8', 4, 4 + len), buf: f.subarray(4 + len) };
+  } catch {
+    return null;
+  }
+}
+
+function diskPut(key: string, buf: Buffer, info: string) {
+  try {
+    fs.mkdirSync(DISK_DIR, { recursive: true });
+    const head = Buffer.from(info, 'utf8');
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(head.length, 0);
+    fs.writeFileSync(diskFile(key), Buffer.concat([len, head, buf]));
+  } catch {}
+}
+
+function markNocov(key: string) {
+  NOCOV.add(key);
+  try {
+    fs.mkdirSync(DISK_DIR, { recursive: true });
+    fs.writeFileSync(nocovFile(key), '');
+  } catch {}
+}
+const isNocov = (key: string) => NOCOV.has(key) || fs.existsSync(nocovFile(key));
+
+// ---- Trabalhos em andamento: várias telas pedindo o mesmo frame compartilham um só download ----
+type Job = { promise: Promise<Aligned>; ctrl: AbortController; refs: number };
+const inflight = new Map<string, Job>();
+
+function joinJob(key: string, make: (signal: AbortSignal) => Promise<Aligned>, signal: AbortSignal): Promise<Aligned> {
+  let job = inflight.get(key);
+  if (!job) {
+    const ctrl = new AbortController();
+    const promise = make(ctrl.signal).finally(() => inflight.delete(key));
+    job = { promise, ctrl, refs: 0 };
+    inflight.set(key, job);
+  }
+  const j = job;
+  j.refs++;
+  // só cancela o download se TODOS que pediram desistiram
+  const onAbort = () => {
+    j.refs--;
+    if (j.refs <= 0) j.ctrl.abort();
+  };
+  signal.addEventListener('abort', onAbort, { once: true });
+  return j.promise.finally(() => signal.removeEventListener('abort', onAbort));
+}
 
 // ---- Parser de FITS (MEF) ----
 function parseHdus(buf: Buffer): Hdu[] {
@@ -130,6 +228,55 @@ function worldToPixel(w: Wcs, raDeg: number, decDeg: number): [number, number] |
   return [u + w.crpix[0] - 1, v + w.crpix[1] - 1];
 }
 
+// Mapa (i,j) da grade de saída -> pixel de entrada.
+// O cálculo exato (trigonometria + iteração do SIP) roda só nos nós de uma grade grossa (a cada STEP pixels);
+// no meio, interpola bilinear. Onde algum nó falha, cai no cálculo exato.
+function makePixelMapper(wcs: Wcs, ra0: number, dec0: number, n: number, scale: number) {
+  const exact = (i: number, j: number): [number, number] | null => {
+    const g = gridToTangentDeg(i, j, n, scale);
+    const sky = tangentToSky(g.xi * D2R, g.eta * D2R, ra0, dec0);
+    return worldToPixel(wcs, sky.ra * R2D, sky.dec * R2D);
+  };
+
+  const m = Math.ceil((n - 1) / STEP) + 2;
+  const nx = new Float64Array(m * m);
+  const ny = new Float64Array(m * m);
+  const ok = new Uint8Array(m * m);
+  for (let jj = 0; jj < m; jj++) {
+    for (let ii = 0; ii < m; ii++) {
+      const p = exact(ii * STEP, jj * STEP);
+      if (p) {
+        const k = jj * m + ii;
+        nx[k] = p[0];
+        ny[k] = p[1];
+        ok[k] = 1;
+      }
+    }
+  }
+
+  return (i: number, j: number): [number, number] | null => {
+    const ci = Math.floor(i / STEP);
+    const cj = Math.floor(j / STEP);
+    const a = cj * m + ci;
+    const b = a + 1;
+    const c = a + m;
+    const d = c + 1;
+    if (ok[a] && ok[b] && ok[c] && ok[d]) {
+      const fx = (i - ci * STEP) / STEP;
+      const fy = (j - cj * STEP) / STEP;
+      const w00 = (1 - fx) * (1 - fy);
+      const w10 = fx * (1 - fy);
+      const w01 = (1 - fx) * fy;
+      const w11 = fx * fy;
+      return [
+        nx[a] * w00 + nx[b] * w10 + nx[c] * w01 + nx[d] * w11,
+        ny[a] * w00 + ny[b] * w10 + ny[c] * w01 + ny[d] * w11,
+      ];
+    }
+    return exact(i, j);
+  };
+}
+
 // Campos de header que provavelmente dizem quando/como/em que cor o frame foi observado.
 // Nomes não confirmados: pega o que casar e o /api/inspect mostra o resto.
 const META_RE = /^(DATE|MJD|EXPT|EXPO|DETECT|OBSID|BAND|WAVE|LAMBDA|LAM)/i;
@@ -144,45 +291,26 @@ function pickMeta(...headers: Record<string, string>[]) {
   return meta;
 }
 
-export async function GET(request: Request) {
+// ---- Baixa o recorte, alinha ao céu (norte em cima) e guarda nos caches ----
+async function build(
+  baseUrl: string,
+  raDeg: number,
+  decDeg: number,
+  fov: number,
+  scale: number,
+  n: number,
+  key: string,
+  signal: AbortSignal
+): Promise<Aligned> {
   const t0 = Date.now();
-  const signal = request.signal;
-  const { searchParams } = new URL(request.url);
-  const baseUrl = searchParams.get('url') || '';
-  const raDeg = parseFloat(searchParams.get('ra') || '');
-  const decDeg = parseFloat(searchParams.get('dec') || '');
-  const fov = parseFloat(searchParams.get('fov') || '0.24');
-  const scale = parseFloat(searchParams.get('scale') || '3.075'); // arcsec/pixel da grade de saída
-
-  if (!baseUrl.startsWith('https://irsa.ipac.caltech.edu/ibe/data/spherex/')) {
-    return NextResponse.json({ error: 'URL fora do arquivo SPHEREx' }, { status: 400 });
-  }
-  if (![raDeg, decDeg, fov, scale].every(Number.isFinite) || fov <= 0 || scale <= 0) {
-    return NextResponse.json({ error: 'Parâmetros inválidos' }, { status: 400 });
-  }
-
-  const n = Math.min(1400, Math.max(16, Math.round((fov * 3600) / scale)));
-  const key = `${baseUrl}|${raDeg}|${decDeg}|${fov}|${scale}`;
-
-  const hit = cache.get(key);
-  if (hit) {
-    return new NextResponse(new Uint8Array(hit.buf), {
-      headers: { 'Content-Type': 'application/octet-stream', 'X-Align-Info': hit.info, 'Cache-Control': 'no-store' },
-    });
-  }
-
   // O quadrado de saída (norte em cima) pode ficar girado em relação ao detector: recorte maior evita cantos vazios
   const cutoutUrl = `${baseUrl}?center=${raDeg},${decDeg}&size=${(fov * 1.45).toFixed(4)}`;
 
-  try {
-    await acquire(signal);
-  } catch {
-    return new NextResponse(null, { status: 499 }); // cancelado na fila
-  }
-
+  await acquire(signal); // lança AbortError se cancelado na fila
+  const tStart = Date.now(); // daqui em diante não conta mais o tempo de espera na fila
   try {
     const buffer = await fetchBuffer(cutoutUrl, { signal, tries: 2, timeoutMs: 60000 });
-    const tDown = Date.now() - t0;
+    const tDown = Date.now() - tStart;
 
     const hdus = parseHdus(buffer);
     const img =
@@ -199,16 +327,13 @@ export async function GET(request: Request) {
     for (let k = 0; k < src.length; k++) src[k] = buffer.readFloatBE(img.dataStart + k * 4);
 
     // Reprojeção: para cada pixel da grade de saída, acha o pixel de entrada (interpolação bilinear)
-    const ra0 = raDeg * D2R;
-    const dec0 = decDeg * D2R;
+    const toPix = makePixelMapper(wcs, raDeg * D2R, decDeg * D2R, n, scale);
     const out = new Float32Array(n * n).fill(NaN);
     let valid = 0;
 
     for (let j = 0; j < n; j++) {
       for (let i = 0; i < n; i++) {
-        const g = gridToTangentDeg(i, j, n, scale);
-        const sky = tangentToSky(g.xi * D2R, g.eta * D2R, ra0, dec0);
-        const p = worldToPixel(wcs, sky.ra * R2D, sky.dec * R2D);
+        const p = toPix(i, j);
         if (!p) continue;
         const [px, py] = p;
         const x0 = Math.floor(px);
@@ -226,6 +351,8 @@ export async function GET(request: Request) {
           valid++;
         }
       }
+      // devolve o controle ao event loop de vez em quando, para não travar outras requisições
+      if ((j & 63) === 63) await new Promise<void>((r) => setImmediate(r));
     }
 
     if (valid < n * n * 0.02) {
@@ -253,21 +380,122 @@ export async function GET(request: Request) {
       hdus: hdus.map((h) => h.header['EXTNAME'] || h.header['XTENSION'] || 'PRIMARY'),
       meta: pickMeta(img.header, hdus[0]?.header || {}),
       downloadMs: tDown,
+      queueMs: tStart - t0,
       totalMs: Date.now() - t0,
     });
 
-    const buf = Buffer.from(out.buffer, out.byteOffset, out.byteLength);
-    if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value as string);
-    cache.set(key, { buf: Buffer.from(buf), info });
+    const entry: Aligned = { buf: Buffer.from(out.buffer, out.byteOffset, out.byteLength), info };
+    memPut(key, entry);
+    diskPut(key, entry.buf, info);
+    return entry;
+  } catch (e: any) {
+    if (e?.status === 422) markNocov(key); // não baixa de novo só para descobrir que não cobre
+    throw e;
+  } finally {
+    release();
+  }
+}
 
-    return new NextResponse(new Uint8Array(buf), {
-      headers: { 'Content-Type': 'application/octet-stream', 'X-Align-Info': info, 'Cache-Control': 'no-store' },
+// ---- Dado alinhado -> PNG em tons de cinza (miniaturas e frame individual do mapa) ----
+function toPng(buf: Buffer): Buffer {
+  // cópia para garantir alinhamento de 4 bytes (o buffer do disco pode vir deslocado)
+  const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
+  const vals = new Float32Array(ab);
+  const n = Math.round(Math.sqrt(vals.length));
+
+  const sample: number[] = [];
+  const stride = Math.max(1, Math.floor(vals.length / 20000));
+  for (let k = 0; k < vals.length; k += stride) if (Number.isFinite(vals[k])) sample.push(vals[k]);
+  sample.sort((a, b) => a - b);
+  const lo = sample.length ? sample[Math.floor(sample.length * 0.02)] : 0;
+  const hi = sample.length ? sample[Math.floor(sample.length * 0.995)] : 1;
+  const range = hi - lo || 1;
+
+  const png = new PNG({ width: n, height: n });
+  for (let k = 0; k < vals.length; k++) {
+    const v = vals[k];
+    const t = Number.isFinite(v) ? Math.min(1, Math.max(0, (v - lo) / range)) : 0;
+    const c = Math.floor(Math.sqrt(t) * 255);
+    const idx = k * 4;
+    png.data[idx] = c;
+    png.data[idx + 1] = c;
+    png.data[idx + 2] = c;
+    png.data[idx + 3] = 255;
+  }
+  return PNG.sync.write(png);
+}
+
+// PNG com cache (memória + disco): requisições repetidas não recodificam
+function getPng(key: string, entry: Aligned): Buffer {
+  const m = pngMem.get(key);
+  if (m) return m;
+  try {
+    const d = fs.readFileSync(pngFile(key));
+    pngPutMem(key, d);
+    return d;
+  } catch {}
+  const b = toPng(entry.buf);
+  pngPutMem(key, b);
+  try {
+    fs.mkdirSync(DISK_DIR, { recursive: true });
+    fs.writeFileSync(pngFile(key), b);
+  } catch {}
+  return b;
+}
+
+function respond(key: string, entry: Aligned, format: 'png' | 'bin') {
+  if (format === 'png') {
+    return new NextResponse(new Uint8Array(getPng(key, entry)), {
+      headers: { 'Content-Type': 'image/png', 'Cache-Control': CACHE_HDR },
     });
+  }
+  return new NextResponse(new Uint8Array(entry.buf), {
+    headers: { 'Content-Type': 'application/octet-stream', 'X-Align-Info': entry.info, 'Cache-Control': CACHE_HDR },
+  });
+}
+
+export async function GET(request: Request) {
+  const signal = request.signal;
+  const { searchParams } = new URL(request.url);
+  const baseUrl = searchParams.get('url') || '';
+  const raDeg = parseFloat(searchParams.get('ra') || '');
+  const decDeg = parseFloat(searchParams.get('dec') || '');
+  const fov = parseFloat(searchParams.get('fov') || '0.24');
+  const scale = parseFloat(searchParams.get('scale') || '3.075'); // arcsec/pixel da grade de saída
+  const format: 'png' | 'bin' = searchParams.get('format') === 'png' ? 'png' : 'bin';
+
+  if (!baseUrl.startsWith('https://irsa.ipac.caltech.edu/ibe/data/spherex/')) {
+    return NextResponse.json({ error: 'URL fora do arquivo SPHEREx' }, { status: 400 });
+  }
+  if (![raDeg, decDeg, fov, scale].every(Number.isFinite) || fov <= 0 || scale <= 0) {
+    return NextResponse.json({ error: 'Parâmetros inválidos' }, { status: 400 });
+  }
+  if (signal.aborted) return new NextResponse(null, { status: 499 });
+
+  const n = Math.min(1400, Math.max(16, Math.round((fov * 3600) / scale)));
+  // A chave não inclui o formato: o PNG e o binário saem do mesmo dado e do mesmo download
+  const key = `${baseUrl}|${raDeg}|${decDeg}|${fov}|${scale}`;
+
+  if (isNocov(key)) {
+    return NextResponse.json({ error: 'Sem cobertura nessa região' }, { status: 422 });
+  }
+
+  let entry = cache.get(key);
+  if (!entry) {
+    const d = diskGet(key);
+    if (d) {
+      memPut(key, d);
+      entry = d;
+    }
+  }
+  if (entry) return respond(key, entry, format);
+
+  try {
+    entry = await joinJob(key, (s) => build(baseUrl, raDeg, decDeg, fov, scale, n, key, s), signal);
+    return respond(key, entry, format);
   } catch (error: any) {
     if (signal.aborted) return new NextResponse(null, { status: 499 });
     console.error('[align]', error.message);
     return NextResponse.json({ error: error.message }, { status: error.status === 422 ? 422 : 502 });
-  } finally {
-    release();
   }
 }

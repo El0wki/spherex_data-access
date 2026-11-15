@@ -18,9 +18,13 @@ const isLevel2Fits = (url: string) => /\.fits$/i.test(url) && url.includes('/lev
 // ---- Cache em disco (sobrevive a reinícios do servidor) ----
 const CACHE_DIR = path.join(process.cwd(), '.cache');
 const diskPath = (key: string) => path.join(CACHE_DIR, `spherex-${key.replace(/[^\w.-]/g, '_')}.json`);
-function diskRead(key: string): Row[] | null {
+const DISK_FRESH = 12 * 60 * 60 * 1000; // disco vale como cache "fresco" por 12 h
+
+function diskRead(key: string, maxAgeMs = Infinity): Row[] | null {
   try {
-    return JSON.parse(fs.readFileSync(diskPath(key), 'utf8'));
+    const p = diskPath(key);
+    if (Date.now() - fs.statSync(p).mtimeMs > maxAgeMs) return null;
+    return JSON.parse(fs.readFileSync(p, 'utf8'));
   } catch {
     return null;
   }
@@ -237,11 +241,14 @@ export async function GET(request: Request) {
   const tag = `[spherex ${key}]`;
 
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_TTL) {
-    console.log(`${tag} cache (${hit.data.length} linhas)`);
+    // Disco fresco: responde sem esperar a IRSA (alvos já buscados abrem na hora)
+  const fresh = diskRead(key, DISK_FRESH);
+  if (fresh && fresh.length) {
+    cache.set(key, { at: Date.now(), data: fresh });
+    console.log(`${tag} disco (${fresh.length} linhas)`);
     return NextResponse.json({
-      data: hit.data,
-      debug: { source: 'cache', ageSec: Math.round((Date.now() - hit.at) / 1000), elapsedMs: Date.now() - t0 },
+      data: fresh,
+      debug: { source: 'cache em disco', elapsedMs: Date.now() - t0 },
     });
   }
 

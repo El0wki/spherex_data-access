@@ -4,7 +4,7 @@ import { parseCoords } from '../../lib/coords';
 import { FeedbackStyles, Radar, Bar, useElapsed, fmtEta } from './Feedback';
 import { useFrameStore, progress } from '../../lib/frameStore';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
 declare global {
   interface Window {
@@ -96,15 +96,17 @@ type Phase = 'idle' | 'searching' | 'rendering' | 'done' | 'error';
 type MapState = 'loading' | 'ready' | 'error';
 type Mode = 'map' | 'frame' | 'video';
 
+// Pontos que o usuário salva (ficam no navegador, via localStorage)
+type SavedPoint = { id: string; name: string; ra: string; dec: string; fov: number };
+const SAVED_KEY = 'spherex-saved-points';
+
 const frameKey = (f: any): string => f?.access_url || f?.accessUrl || f?.url || f?.fileUrl || '';
 const shortName = (key: string) => (key.split('?')[0].split('/').pop() || key).slice(-34);
 
 const buildPngUrl = (frame: any, c: Center) => {
   const raw = frameKey(frame);
   if (!raw) return '';
-  const sep = raw.includes('?') ? '&' : '?';
-  const cutout = `${raw}${sep}center=${c.ra},${c.dec}&size=${c.fov}`;
-  return `/api/fits-to-png?url=${encodeURIComponent(cutout)}`;
+  return `/api/align?url=${encodeURIComponent(raw)}&ra=${c.ra}&dec=${c.dec}&fov=${c.fov}&format=png`;
 };
 
 const LOG_COLORS: Record<LogLevel, string> = {
@@ -113,6 +115,85 @@ const LOG_COLORS: Record<LogLevel, string> = {
   warn: 'text-yellow-400',
   error: 'text-red-400',
 };
+
+// [perf] Miniatura da faixa memoizada: um clique só re-renderiza a que perdeu e a que ganhou o destaque
+const StripThumb = memo(function StripThumb({
+  frame,
+  idx,
+  tile,
+  selected,
+  rootRef,
+  onEnter,
+  onLeave,
+  onPick,
+  onRetry,
+}: {
+  frame: any;
+  idx: number;
+  tile?: TileState;
+  selected: boolean;
+  rootRef: React.RefObject<HTMLDivElement | null>;
+  onEnter: (f: any) => void;
+  onLeave: (key: string) => void;
+  onPick: (f: any) => void;
+  onRetry: (f: any) => void;
+}) {
+  const key = frameKey(frame);
+  return (
+    <LazyCell
+      rootRef={rootRef}
+      onEnter={() => onEnter(frame)}
+      onLeave={() => onLeave(key)}
+      onClick={() => onPick(frame)}
+      className={`shrink-0 w-24 flex flex-col gap-1 p-1 rounded border cursor-pointer transition ${
+        selected ? 'border-blue-500 bg-gray-800' : 'border-gray-800 bg-gray-900 hover:border-gray-600'
+      }`}
+    >
+      <div className="flex-1 min-h-0 bg-black rounded overflow-hidden flex items-center justify-center">
+        {tile?.status === 'ok' && tile.src && (
+          <img src={tile.src} alt={`Frame ${idx + 1}`} draggable={false} decoding="async" className="w-full h-full object-cover" style={{ imageRendering: 'pixelated' }} />
+        )}
+        {tile?.status === 'loading' && <div className="h-4 w-4 rounded-full border-2 border-gray-700 border-t-blue-500 animate-spin" />}
+        {!tile && <span className="text-[9px] text-gray-700">…</span>}
+        {tile?.status === 'error' && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onRetry(frame);
+            }}
+            className="text-[10px] text-red-400 hover:text-red-300"
+          >
+            ↻ erro
+          </button>
+        )}
+      </div>
+      <div className="text-[9px] text-gray-400 font-mono truncate">
+        #{idx + 1} · {frame.date || frame.energy_bandpassname || 'IR'}
+      </div>
+    </LazyCell>
+  );
+});
+
+// [perf] Estes dois assinam o frameStore sozinhos: o SkyMap inteiro não re-renderiza mais a cada frame que chega
+function ProgressText({ fmt }: { fmt: (p: ReturnType<typeof progress>) => React.ReactNode }) {
+  useFrameStore();
+  return <>{fmt(progress())}</>;
+}
+
+function PrepCard() {
+  useFrameStore();
+  const p = progress();
+  if (p.pending === 0) return null;
+  return (
+    <div className="absolute top-3 right-3 z-20 w-44 md:w-60 bg-gray-900/95 border border-gray-700 rounded p-2.5 flex flex-col gap-1.5">
+      <span className="text-[11px] text-gray-200">Preparando a linha do tempo… {p.done}/{p.total}</span>
+      <Bar value={p.total ? p.done / p.total : 0} />
+      <span className="text-[10px] text-gray-500">
+        {p.finished >= 2 ? `falta ${fmtEta((p.elapsedMs / p.finished) * p.pending)}` : 'cada frame leva 10–25 s'}
+      </span>
+    </div>
+  );
+}
 
 // ---- Carrega o Aladin Lite (script do CDS) só no navegador ----
 let aladinPromise: Promise<any> | null = null;
@@ -177,8 +258,9 @@ export default function SkyMap() {
   const [drawMode, setDrawMode] = useState(false);
   const [drawing, setDrawing] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [searchNote, setSearchNote] = useState('');
-  useFrameStore(); // re-renderiza quando chega um frame
-  const prog = progress();
+  const [saved, setSaved] = useState<SavedPoint[]>([]);
+  const [pickName, setPickName] = useState('');
+  // [perf] useFrameStore()/progress() saíram daqui: ver ProgressText e PrepCard
   const [fov, setFov] = useState(0.24);
   const [band, setBand] = useState('color');
   const [mode, setMode] = useState<Mode>('map');
@@ -209,6 +291,7 @@ export default function SkyMap() {
   const viewerRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ px: number; py: number; vx: number; vy: number } | null>(null);
   const logEndRef = useRef<HTMLDivElement | null>(null);
+  const logBufRef = useRef<LogEntry[]>([]);
   const aladinRef = useRef<any>(null);
   const aRef = useRef<any>(null);
   const overlayRef = useRef<any>(null);
@@ -221,16 +304,46 @@ export default function SkyMap() {
   tilesRef.current = tiles;
   fovRef.current = fov;
 
+  // [perf] Log com throttle: agrupa as linhas de 300 ms em um único re-render
   const addLog = useCallback((level: LogLevel, text: string) => {
     const t = new Date().toLocaleTimeString('pt-BR');
-    setLog((prev) => [...prev.slice(-299), { t, level, text }]);
+    const first = logBufRef.current.length === 0;
+    logBufRef.current.push({ t, level, text });
+    if (first) {
+      setTimeout(() => {
+        const batch = logBufRef.current;
+        logBufRef.current = [];
+        setLog((prev) => [...prev, ...batch].slice(-300));
+      }, 300);
+    }
   }, []);
 
   useEffect(() => {
-  // rola só a caixa do log, sem mexer na página
-  const box = logEndRef.current?.parentElement;
-  if (box) box.scrollTop = box.scrollHeight;
-}, [log, showLog]);
+    // rola só a caixa do log, sem mexer na página
+    const box = logEndRef.current?.parentElement;
+    if (box) box.scrollTop = box.scrollHeight;
+  }, [log, showLog]);
+
+  // ---------------- Pontos salvos ----------------
+  // Carrega os pontos salvos (só no navegador, por isso fica no useEffect)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SAVED_KEY);
+      if (raw) setSaved(JSON.parse(raw));
+    } catch {}
+  }, []);
+
+  const persistSaved = (list: SavedPoint[]) => {
+    setSaved(list);
+    try {
+      localStorage.setItem(SAVED_KEY, JSON.stringify(list));
+    } catch {}
+  };
+
+  // Limpa o campo de nome quando a área escolhida muda
+  useEffect(() => {
+    setPickName('');
+  }, [picked?.ra, picked?.dec]);
 
   // ---------------- Aladin ----------------
   const moveMap = useCallback(
@@ -419,16 +532,21 @@ export default function SkyMap() {
     [pump, setTile, addLog]
   );
 
+  // [perf] Handlers estáveis (só usam refs e setters): permitem o memo do StripThumb funcionar
+
   // Pedido pela visibilidade: só enfileira se ainda não foi pedido
-  const enterTile = (frame: any) => {
-    const key = frameKey(frame);
-    if (tilesRef.current[key]) return;
-    if (queueRef.current.some((q) => q.key === key)) return;
-    loadTile(key, buildPngUrl(frame, centerRef.current), runRef.current);
-  };
+  const enterTile = useCallback(
+    (frame: any) => {
+      const key = frameKey(frame);
+      if (tilesRef.current[key]) return;
+      if (queueRef.current.some((q) => q.key === key)) return;
+      loadTile(key, buildPngUrl(frame, centerRef.current), runRef.current);
+    },
+    [loadTile]
+  );
 
   // Saiu da tela e ainda não começou a baixar: tira da fila
-  const cancelQueued = (key: string) => {
+  const cancelQueued = useCallback((key: string) => {
     const i = queueRef.current.findIndex((q) => q.key === key);
     if (i < 0) return; // já está baixando ou pronto: deixa terminar
     queueRef.current.splice(i, 1);
@@ -437,7 +555,37 @@ export default function SkyMap() {
       delete next[key];
       return next;
     });
-  };
+  }, []);
+
+  const retryTile = useCallback(
+    (frame: any) => {
+      loadTile(frameKey(frame), buildPngUrl(frame, centerRef.current), runRef.current);
+    },
+    [loadTile]
+  );
+
+  // Clique numa miniatura: seleciona e põe esse frame na frente da fila
+  const pickFrame = useCallback(
+    (frame: any) => {
+      const key = frameKey(frame);
+      userPickedRef.current = true;
+      setSelectedKey(key);
+      setMode('frame');
+
+      const st = tilesRef.current[key]?.status;
+      if (st === 'ok' || st === 'nocoverage') return;
+      if (!st || st === 'error') retryTile(frame);
+      const i = queueRef.current.findIndex((q) => q.key === key);
+      if (i > 0) queueRef.current.unshift(queueRef.current.splice(i, 1)[0]);
+    },
+    [retryTile]
+  );
+
+  // [perf] Estável: o TimelinePlayer (memoizado) não re-renderiza por causa dele
+  const onSelectFrame = useCallback((k: string) => {
+    userPickedRef.current = true;
+    setSelectedKey(k);
+  }, []);
 
   const fetchData = async (targetRa: string, targetDec: string, targetFov: number) => {
     const runId = ++runRef.current;
@@ -560,14 +708,39 @@ export default function SkyMap() {
     fetchData(t.ra, t.dec, fov);
   };
 
-  const pickFrame = (key: string) => {
-    userPickedRef.current = true;
-    setSelectedKey(key);
-    setMode('frame');
+  // ---- Pontos salvos: salvar, abrir e apagar ----
+  const savePoint = (name: string, r: string, d: string, f: number) => {
+    const same = saved.find(
+      (p) =>
+        Math.abs(parseFloat(p.ra) - parseFloat(r)) < 1e-5 &&
+        Math.abs(parseFloat(p.dec) - parseFloat(d)) < 1e-5 &&
+        p.fov === f
+    );
+    if (same) {
+      addLog('info', `Esse ponto já está salvo como "${same.name}"`);
+      return;
+    }
+    const p: SavedPoint = {
+      id: Date.now().toString(36),
+      name: name.trim() || `Ponto ${saved.length + 1}`,
+      ra: r,
+      dec: d,
+      fov: f,
+    };
+    persistSaved([...saved, p]);
+    addLog('ok', `Ponto salvo: ${p.name} (RA ${p.ra}, Dec ${p.dec}, campo ${p.fov}°)`);
   };
 
-  const retryTile = (frame: any) => {
-    loadTile(frameKey(frame), buildPngUrl(frame, centerRef.current), runRef.current);
+  // Abre o ponto com o mesmo campo (enquadramento) em que foi salvo
+  const selectPoint = (p: SavedPoint) => {
+    setRa(p.ra);
+    setDec(p.dec);
+    setFov(p.fov);
+    fetchData(p.ra, p.dec, p.fov);
+  };
+
+  const removePoint = (id: string) => {
+    persistSaved(saved.filter((p) => p.id !== id));
   };
 
   const retryAllErrors = () => {
@@ -692,7 +865,10 @@ export default function SkyMap() {
   const loading = phase === 'searching';
   const selectedFrame = frames.find((f) => frameKey(f) === selectedKey) || null;
   const selectedTile = selectedKey ? tiles[selectedKey] : undefined;
-  const stripFrames = frames.filter((f) => tiles[frameKey(f)]?.status !== 'nocoverage');
+  // [perf] o índice vem do map, sem frames.indexOf (que era O(n²) na faixa)
+  const stripFrames = frames
+    .map((frame, idx) => ({ frame, idx }))
+    .filter(({ frame }) => tiles[frameKey(frame)]?.status !== 'nocoverage');
 
   const mapChip =
     mapState === 'ready'
@@ -710,7 +886,7 @@ export default function SkyMap() {
         <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-3 min-w-0">
           <h1 className="text-base font-bold text-blue-400">SPHEREx Sky Explorer</h1>
           {/* No celular os alvos viram uma faixa que rola para o lado */}
-          <div className="flex items-center gap-1 overflow-x-auto md:overflow-visible -mx-2 px-2 md:mx-0 md:px-0 pb-1 md:pb-0">
+          <div className="flex items-center gap-1 overflow-x-auto md:overflow-visible md:flex-wrap -mx-2 px-2 md:mx-0 md:px-0 pb-1 md:pb-0">
             {CHALLENGE_TARGETS.map((t) => (
               <button
                 key={t.name}
@@ -719,6 +895,27 @@ export default function SkyMap() {
               >
                 {t.name}
               </button>
+            ))}
+
+            {/* Meus pontos: salvos no navegador, abrem com o mesmo campo em que foram salvos */}
+            {saved.length > 0 && <span className="shrink-0 w-px h-5 bg-gray-700 mx-1" />}
+            {saved.map((p) => (
+              <div key={p.id} className="shrink-0 flex items-center rounded border border-cyan-800 bg-cyan-950/40 text-xs">
+                <button
+                  onClick={() => selectPoint(p)}
+                  title={`RA ${p.ra} · Dec ${p.dec} · campo ${p.fov}°`}
+                  className="px-2.5 py-1.5 md:py-1 hover:bg-cyan-900/50 rounded-l max-w-[10rem] truncate"
+                >
+                  ⭐ {p.name}
+                </button>
+                <button
+                  onClick={() => removePoint(p.id)}
+                  title="Apagar este ponto"
+                  className="px-2 py-1.5 md:py-1 text-gray-400 hover:text-red-400 hover:bg-cyan-900/50 rounded-r"
+                >
+                  ×
+                </button>
+              </div>
             ))}
 
             <a href="https://gioperovano.github.io/astrobyte2/ar/" className="shrink-0">
@@ -782,6 +979,15 @@ export default function SkyMap() {
             <span>{banner.text}</span>
             <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono">
               <span>RA {center.ra}, Dec {center.dec} · {center.fov}°</span>
+              {phase !== 'searching' && (
+                <button
+                  onClick={() => savePoint('', center.ra, center.dec, center.fov)}
+                  title="Salva o alvo atual (coordenadas e campo) em Meus pontos"
+                  className="bg-cyan-700 hover:bg-cyan-600 px-3 py-1 md:py-0.5 rounded-full text-white font-sans transition"
+                >
+                  ⭐ Salvar alvo
+                </button>
+              )}
               {counts.error > 0 && (
                 <button onClick={retryAllErrors} className="bg-blue-600 hover:bg-blue-500 px-3 py-1 md:py-0.5 rounded-full text-white font-sans transition">
                   Tentar erros de novo
@@ -809,10 +1015,17 @@ export default function SkyMap() {
                 onClick={() => setMode('video')}
                 className={`px-3 py-2 md:py-1 transition disabled:opacity-40 ${mode === 'video' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
               >
-                🎬 Linha do tempo{prog.total > 0 ? ` · ${prog.done}/${prog.total}` : ''}
-                {prog.pending > 0 && (
-                  <span className="ml-1.5 inline-block h-2.5 w-2.5 rounded-full border-2 border-white/40 border-t-white animate-spin align-middle" />
-                )}
+                🎬 Linha do tempo
+                <ProgressText
+                  fmt={(p) => (
+                    <>
+                      {p.total > 0 ? ` · ${p.done}/${p.total}` : ''}
+                      {p.pending > 0 && (
+                        <span className="ml-1.5 inline-block h-2.5 w-2.5 rounded-full border-2 border-white/40 border-t-white animate-spin align-middle" />
+                      )}
+                    </>
+                  )}
+                />
               </button>
             </div>
 
@@ -916,9 +1129,9 @@ export default function SkyMap() {
                 </div>
               )}
 
-              {/* Cartão da área escolhida (agora fora do botão da linha do tempo) */}
+              {/* Cartão da área escolhida: gerar a linha do tempo ou salvar em Meus pontos */}
               {picked && (
-                <div className="absolute top-3 left-3 z-10 max-w-[calc(100%-1.5rem)] bg-gray-900/95 border border-cyan-800 rounded p-3 text-xs flex flex-col gap-2">
+                <div className="absolute top-3 left-3 z-10 w-72 max-w-[calc(100%-1.5rem)] bg-gray-900/95 border border-cyan-800 rounded p-3 text-xs flex flex-col gap-2">
                   <span className="font-mono text-gray-200">RA {picked.ra.toFixed(5)} · Dec {picked.dec.toFixed(5)}</span>
                   <span className="text-gray-400">Raio {((picked.fov / 2) * 60).toFixed(1)}′ · recorte de {picked.fov}°</span>
                   <div className="flex flex-wrap gap-2">
@@ -942,6 +1155,25 @@ export default function SkyMap() {
                       cancelar
                     </button>
                   </div>
+                  <div className="flex gap-2 border-t border-gray-800 pt-2">
+                    <input
+                      type="text"
+                      value={pickName}
+                      onChange={(e) => setPickName(e.target.value)}
+                      placeholder="Nome do ponto (opcional)"
+                      maxLength={40}
+                      className="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded px-2 py-1.5 md:py-1 text-base md:text-xs text-white outline-none"
+                    />
+                    <button
+                      onClick={() => {
+                        savePoint(pickName, picked.ra.toFixed(6), picked.dec.toFixed(6), picked.fov);
+                        setPickName('');
+                      }}
+                      className="shrink-0 bg-cyan-700 hover:bg-cyan-600 text-white px-3 py-1.5 md:py-1 rounded"
+                    >
+                      ⭐ Salvar
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -952,7 +1184,7 @@ export default function SkyMap() {
                 >
                   <span className="md:hidden">▶ Linha do tempo</span>
                   <span className="hidden md:inline">▶ Ver como esse pedaço do céu muda no tempo</span>
-                  {prog.total > 0 ? ` (${prog.done}/${prog.total} prontos)` : ''}
+                  <ProgressText fmt={(p) => (p.total > 0 ? ` (${p.done}/${p.total} prontos)` : '')} />
                 </button>
               )}
               {mapState === 'ready' && (
@@ -1032,7 +1264,7 @@ export default function SkyMap() {
                     : `Nenhuma observação encontrada para essa coordenada.${searchNote ? ' ' + searchNote : ''}`
                 }
                 selectedKey={selectedKey}
-                onSelect={(k) => { userPickedRef.current = true; setSelectedKey(k); }}
+                onSelect={onSelectFrame}
               />
             </div>
             {phase === 'searching' && (
@@ -1042,59 +1274,27 @@ export default function SkyMap() {
                 <span className="text-[11px] text-gray-400 font-mono">{searchSecs}s · consultando a IRSA (até 30 s se estiver lenta)</span>
               </div>
             )}
-            {mode !== 'video' && frames.length > 0 && prog.pending > 0 && (
-              <div className="absolute top-3 right-3 z-20 w-44 md:w-60 bg-gray-900/95 border border-gray-700 rounded p-2.5 flex flex-col gap-1.5">
-                <span className="text-[11px] text-gray-200">Preparando a linha do tempo… {prog.done}/{prog.total}</span>
-                <Bar value={prog.total ? prog.done / prog.total : 0} />
-                <span className="text-[10px] text-gray-500">
-                  {prog.finished >= 2 ? `falta ${fmtEta((prog.elapsedMs / prog.finished) * prog.pending)}` : 'cada frame leva 10–25 s'}
-                </span>
-              </div>
-            )}
+            {mode !== 'video' && frames.length > 0 && <PrepCard />}
           </div>
 
           {/* Faixa de frames: cada thumbnail só baixa quando se aproxima da área visível */}
           <div ref={stripRef} className="h-28 shrink-0 overflow-x-auto overflow-y-hidden">
             <div className="flex gap-2 h-full">
-              {stripFrames.map((frame) => {
+              {stripFrames.map(({ frame, idx }) => {
                 const key = frameKey(frame);
-                const tile = tiles[key];
-                const isSelected = selectedKey === key && mode === 'frame';
-                const idx = frames.indexOf(frame);
-
                 return (
-                  <LazyCell
+                  <StripThumb
                     key={key}
+                    frame={frame}
+                    idx={idx}
+                    tile={tiles[key]}
+                    selected={selectedKey === key && mode === 'frame'}
                     rootRef={stripRef}
-                    onEnter={() => enterTile(frame)}
-                    onLeave={() => cancelQueued(key)}
-                    onClick={() => pickFrame(key)}
-                    className={`shrink-0 w-24 flex flex-col gap-1 p-1 rounded border cursor-pointer transition ${
-                      isSelected ? 'border-blue-500 bg-gray-800' : 'border-gray-800 bg-gray-900 hover:border-gray-600'
-                    }`}
-                  >
-                    <div className="flex-1 min-h-0 bg-black rounded overflow-hidden flex items-center justify-center">
-                      {tile?.status === 'ok' && tile.src && (
-                        <img src={tile.src} alt={`Frame ${idx + 1}`} draggable={false} decoding="async" className="w-full h-full object-cover" style={{ imageRendering: 'pixelated' }} />
-                      )}
-                      {tile?.status === 'loading' && <div className="h-4 w-4 rounded-full border-2 border-gray-700 border-t-blue-500 animate-spin" />}
-                      {!tile && <span className="text-[9px] text-gray-700">…</span>}
-                      {tile?.status === 'error' && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            retryTile(frame);
-                          }}
-                          className="text-[10px] text-red-400 hover:text-red-300"
-                        >
-                          ↻ erro
-                        </button>
-                      )}
-                    </div>
-                    <div className="text-[9px] text-gray-400 font-mono truncate">
-                      #{idx + 1} · {frame.date || frame.energy_bandpassname || 'IR'}
-                    </div>
-                  </LazyCell>
+                    onEnter={enterTile}
+                    onLeave={cancelQueued}
+                    onPick={pickFrame}
+                    onRetry={retryTile}
+                  />
                 );
               })}
             </div>

@@ -855,7 +855,7 @@ setStatusMsg(`${items.length} observations found.`);
       : 'bg-blue-900/40 border-blue-700 text-blue-300';
 
   return (
-    <div className="flex flex-col min-h-[100dvh] md:h-screen bg-gray-950 text-white md:overflow-hidden">
+    <div className="flex flex-col min-h-screen supports-[height:1dvh]:min-h-[100dvh] bg-gray-950 text-white">
       <FeedbackStyles />
       <header className="flex flex-col md:flex-row md:flex-wrap md:items-center md:justify-between gap-2 md:gap-4 p-2 md:p-3 bg-gray-900 border-b border-gray-800 shadow-md">
         <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-3 min-w-0">
@@ -950,8 +950,8 @@ setStatusMsg(`${items.length} observations found.`);
         </form>
       </header>
 
-      <div className="flex flex-col md:flex-row flex-1 md:overflow-hidden relative">
-        <main className="flex-1 flex flex-col min-w-0 p-2 md:p-4 gap-3">
+<div className="flex flex-col md:flex-row flex-1 relative">
+          <main className="flex-1 flex flex-col min-w-0 p-2 md:p-4 gap-3">
           <div className={`border rounded px-3 py-2 text-xs flex flex-wrap items-center justify-between gap-2 ${banner.color}`}>
             <span>{banner.text}</span>
             <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono">
@@ -1043,8 +1043,7 @@ setStatusMsg(`${items.length} observations found.`);
           )}
 
           {/* Map, frame and timeline stay mounted; only visibility toggles */}
-          <div className={`${mode === 'video' ? 'h-[90dvh]' : 'h-[65dvh]'} min-h-[22rem] md:h-auto md:min-h-0 md:flex-1 relative bg-black rounded-lg border border-gray-800 overflow-hidden`}>
-            <div className={`absolute inset-0 ${mode === 'map' ? '' : 'invisible pointer-events-none'}`}>
+<div className={`${mode === 'video' ? 'max-md:h-[90vh] max-md:supports-[height:1dvh]:h-[90dvh]' : 'max-md:h-[65vh] max-md:supports-[height:1dvh]:h-[65dvh]'} min-h-[22rem] md:min-h-[18rem] md:flex-1 relative bg-black rounded-lg border border-gray-800 overflow-hidden`}>            <div className={`absolute inset-0 ${mode === 'map' ? '' : 'invisible pointer-events-none'}`}>
               <div ref={mapBoxRef} className="absolute inset-0">
                 <div id="aladin-lite-div" style={{ width: '100%', height: '100%' }} />
               </div>
@@ -1249,8 +1248,7 @@ setStatusMsg(`${items.length} observations found.`);
           </div>
 
           {/* Each thumbnail only downloads when it nears the visible area */}
-          <div ref={stripRef} className="h-28 shrink-0 overflow-x-auto overflow-y-hidden">
-            <div className="flex gap-2 h-full">
+<div ref={stripRef} className="h-28 [@media(max-height:700px)]:h-20 shrink-0 overflow-x-auto overflow-y-hidden">            <div className="flex gap-2 h-full">
               {stripFrames.map(({ frame, idx }) => {
                 const key = frameKey(frame);
                 return (
@@ -1272,8 +1270,8 @@ setStatusMsg(`${items.length} observations found.`);
           </div>
         </main>
 
-        <aside className="w-full md:w-80 bg-gray-900/95 border-t md:border-t-0 md:border-l border-gray-800 flex flex-col z-10 p-3 md:p-4 gap-3 backdrop-blur md:min-h-0">
-          <div>
+<aside className="relative w-full md:w-80 md:shrink-0 bg-gray-900/95 border-t md:border-t-0 md:border-l border-gray-800 z-10 backdrop-blur">
+  <div className="flex flex-col gap-3 p-3 md:p-4 md:absolute md:inset-0 md:overflow-y-auto">          <div>
             <h3 className="font-semibold text-sm text-gray-200">Selected frame</h3>
             <p className="text-xs text-gray-400 mt-0.5">Tap a frame in the strip to see its cutout.</p>
           </div>
@@ -1307,8 +1305,7 @@ setStatusMsg(`${items.length} observations found.`);
             <div className="text-xs text-gray-500 py-4 text-center">No frame selected.</div>
           )}
 
-          <div className="flex-1 min-h-0 flex flex-col border-t border-gray-800 pt-3">
-            <div className="flex items-center justify-between mb-2">
+<div className="md:flex-1 md:min-h-[10rem] flex flex-col border-t border-gray-800 pt-3">            <div className="flex items-center justify-between mb-2">
               <h3 className="font-semibold text-xs text-gray-300">Debug log</h3>
               <div className="flex gap-3 text-[10px]">
                 <button onClick={() => setShowLog((s) => !s)} className="text-gray-400 hover:text-white">{showLog ? 'hide' : 'show'}</button>
@@ -1316,8 +1313,7 @@ setStatusMsg(`${items.length} observations found.`);
               </div>
             </div>
             {showLog && (
-              <div className="h-48 md:h-auto md:flex-1 md:min-h-0 overflow-y-auto bg-black/60 border border-gray-800 rounded p-2 font-mono text-[10px] leading-relaxed">
-                {log.length === 0 && <span className="text-gray-600">No events yet.</span>}
+<div className="h-48 md:h-auto md:flex-1 md:min-h-[6rem] overflow-y-auto bg-black/60 border border-gray-800 rounded p-2 font-mono text-[10px] leading-relaxed">                {log.length === 0 && <span className="text-gray-600">No events yet.</span>}
                 {log.map((l, i) => (
                   <div key={i} className={LOG_COLORS[l.level]}>
                     <span className="text-gray-600">{l.t}</span> {l.text}
@@ -1330,6 +1326,7 @@ setStatusMsg(`${items.length} observations found.`);
 
           <div className="text-[10px] text-center text-gray-500 border-t border-gray-800 pt-3">
             SPHEREx: IRSA/IPAC · Map background: CDS Strasbourg
+          </div>
           </div>
         </aside>
       </div>

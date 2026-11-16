@@ -624,18 +624,12 @@ function TimelinePlayer({
             )}
           </div>
         ) : ready.length > 0 ? (
-          <div
-            className="relative"
-            style={{
-              aspectRatio: `${aspect}`,
-              height: aspect <= 1 ? '100%' : undefined,
-              width: aspect > 1 ? '100%' : undefined,
-              maxWidth: '100%',
-              maxHeight: '100%',
-              transform: `scale(${zoom})`,
-            }}
-          >
-            <canvas ref={canvasRef} className="w-full h-full" style={{ imageRendering: 'pixelated' }} />
+          <div className="absolute inset-0 flex items-center justify-center" style={{ transform: `scale(${zoom})` }}>
+            <canvas
+              ref={canvasRef}
+              className="w-full h-full"
+              style={{ objectFit: 'contain', imageRendering: 'pixelated' }}
+            />
           </div>
         ) : showLoadingPanel ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-6">
@@ -742,8 +736,7 @@ function TimelinePlayer({
         </span>
       </div>
 
-      <div ref={stripRef} className="h-24 md:h-28 shrink-0 flex gap-1.5 overflow-x-auto overflow-y-hidden p-2 bg-gray-950 border-t border-gray-800">
-        {visible &&
+<div ref={stripRef} className="h-24 md:h-28 shrink-0 flex gap-1.5 overflow-x-auto overflow-y-hidden p-2 bg-gray-950 border-t border-gray-800 [@media(max-height:700px)]:hidden">        {visible &&
           list.map((f, i) => {
             const k = keyOf(f);
             const s = getSlot(k);

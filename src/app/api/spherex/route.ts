@@ -15,10 +15,10 @@ const COLLECTIONS = ['spherex_dr1', 'spherex_qr3'];
 const isCurrentRelease = (url: string) => /\/(dr1|qr3)\//.test(url);
 const isLevel2Fits = (url: string) => /\.fits$/i.test(url) && url.includes('/level2/');
 
-// ---- Cache em disco (sobrevive a reinícios do servidor) ----
+// Cache em disco (sobrevive a reinícios do servidor)
 const CACHE_DIR = path.join(process.cwd(), '.cache');
 const diskPath = (key: string) => path.join(CACHE_DIR, `spherex-${key.replace(/[^\w.-]/g, '_')}.json`);
-const DISK_FRESH = 12 * 60 * 60 * 1000; // disco vale como cache "fresco" por 12 h
+const DISK_FRESH = 12 * 60 * 60 * 1000;
 
 function diskRead(key: string, maxAgeMs = Infinity): Row[] | null {
   try {
@@ -36,7 +36,7 @@ function diskWrite(key: string, data: Row[]) {
   } catch {}
 }
 
-// ---- Semente de emergência (dev): frames do Barnard's Star vistos no log, usados só se TAP e SIA caírem ----
+// Semente de emergência (dev): frames do Barnard's Star, usados só se TAP e SIA caírem
 const SEED = { ra: 269.452075, dec: 4.693391 };
 const B = 'https://irsa.ipac.caltech.edu/ibe/data/spherex/dr1/level2/';
 const SEED_URLS = [
@@ -115,7 +115,7 @@ async function getWithRetry(url: string, via: string, attempts: Attempt[], tries
       lastDetail = `${via}: ${note}`;
       attempts.push({ n: attempts.length + 1, ms: Date.now() - t0, status: 'falhou', note, via });
     }
-    await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
+    if (i < tries - 1) await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
   }
   throw new Error(lastDetail || `${via}: falha desconhecida`);
 }
@@ -136,7 +136,7 @@ function dedupe(rows: Row[]): Row[] {
   });
 }
 
-// ---- Caminho principal: TAP ----
+// Caminho principal: TAP (pior caso ~41 s)
 async function queryTap(ra: number, dec: number, attempts: Attempt[]): Promise<Row[]> {
   const adql = `SELECT TOP 400
   'https://irsa.ipac.caltech.edu/' || a.uri AS access_url,
@@ -150,7 +150,7 @@ ORDER BY p.time_bounds_lower`;
 
   const params = new URLSearchParams({ REQUEST: 'doQuery', LANG: 'ADQL', FORMAT: 'csv', QUERY: adql });
   const url = `https://irsa.ipac.caltech.edu/TAP/sync?${params.toString()}`;
-  const text = await getWithRetry(url, 'TAP', attempts, 3, 60000);
+  const text = await getWithRetry(url, 'TAP', attempts, 2, 20000);
 
   const raw = csvToRows(text);
   const rows = dedupe(
@@ -168,7 +168,7 @@ ORDER BY p.time_bounds_lower`;
   return rows;
 }
 
-// ---- Reserva: SIA2 (DR1 + QR3) ----
+// Reserva: SIA2 (DR1 + QR3), 1 tentativa de 15 s por coleção
 async function querySia(ra: number, dec: number, size: string, attempts: Attempt[]): Promise<Row[]> {
   const results = await Promise.allSettled(
     COLLECTIONS.map((c) =>
@@ -176,8 +176,8 @@ async function querySia(ra: number, dec: number, size: string, attempts: Attempt
         `https://irsa.ipac.caltech.edu/SIA?COLLECTION=${c}&POS=circle+${ra}+${dec}+${size}&RESPONSEFORMAT=CSV`,
         `SIA ${c}`,
         attempts,
-        2,
-        25000
+        1,
+        15000
       )
     )
   );
@@ -192,8 +192,7 @@ async function querySia(ra: number, dec: number, size: string, attempts: Attempt
   }
   if (!okCount) throw new Error('SIA: nenhuma coleção respondeu');
 
-  // Colunas ObsCore (nomes padrão, não confirmados na documentação): t_min em MJD, em_min/em_max em metros.
-  // Se vierem diferentes, o console.log abaixo mostra a primeira linha.
+  // Colunas ObsCore (nomes padrão, não confirmados): t_min em MJD, em_min/em_max em metros
   if (raw[0]) console.log('[spherex SIA] colunas:', Object.keys(raw[0]).join(', '));
 
   return dedupe(
@@ -213,16 +212,18 @@ async function querySia(ra: number, dec: number, size: string, attempts: Attempt
 
 async function fetchRows(ra: number, dec: number, size: string) {
   const attempts: Attempt[] = [];
+
+  const tap = queryTap(ra, dec, attempts).then((rows) => ({ rows, attempts, via: 'TAP' }));
+  const sia = querySia(ra, dec, size, attempts).then((rows) => {
+    if (!rows.length) throw new Error('SIA: sem resultados');
+    return { rows, attempts, via: 'SIA (paralelo)' };
+  });
+
   try {
-    const rows = await queryTap(ra, dec, attempts);
-    return { rows, attempts, via: 'TAP' };
-  } catch (tapErr: any) {
-    try {
-      const rows = await querySia(ra, dec, size, attempts);
-      return { rows, attempts, via: 'SIA (reserva)' };
-    } catch (siaErr: any) {
-      throw Object.assign(new Error(`${tapErr.message} | ${siaErr.message}`), { attempts });
-    }
+    return await Promise.any([tap, sia]);
+  } catch (e: any) {
+    const msg = (e.errors || []).map((x: any) => x.message).join(' | ') || e.message;
+    throw Object.assign(new Error(msg), { attempts });
   }
 }
 
@@ -240,8 +241,17 @@ export async function GET(request: Request) {
   const key = `${ra},${dec}`;
   const tag = `[spherex ${key}]`;
 
+  // Memória fresca (inclui resultados vazios): responde na hora
   const hit = cache.get(key);
-    // Disco fresco: responde sem esperar a IRSA (alvos já buscados abrem na hora)
+  if (hit && Date.now() - hit.at < CACHE_TTL) {
+    console.log(`${tag} memória (${hit.data.length} linhas)`);
+    return NextResponse.json({
+      data: hit.data,
+      debug: { source: 'cache em memória', elapsedMs: Date.now() - t0 },
+    });
+  }
+
+  // Disco fresco: alvos já buscados abrem sem esperar a IRSA
   const fresh = diskRead(key, DISK_FRESH);
   if (fresh && fresh.length) {
     cache.set(key, { at: Date.now(), data: fresh });
@@ -262,10 +272,8 @@ export async function GET(request: Request) {
 
   try {
     const { rows, attempts, via } = await job;
-    if (rows.length > 0) {
-      cache.set(key, { at: Date.now(), data: rows });
-      diskWrite(key, rows);
-    }
+    cache.set(key, { at: Date.now(), data: rows });
+    if (rows.length > 0) diskWrite(key, rows);
     console.log(`${tag} ${via} ok: ${rows.length} linhas, ${Date.now() - t0}ms${shared ? ' (compartilhado)' : ''}`);
     return NextResponse.json({
       data: rows,
@@ -277,7 +285,7 @@ export async function GET(request: Request) {
     attempts.forEach((a) => console.error(`   ${a.via} tentativa ${a.n}: ${a.status} em ${a.ms}ms ${a.note || ''}`));
 
     // 1) cache em memória vencido
-    if (hit) {
+    if (hit && hit.data.length) {
       return NextResponse.json({
         data: hit.data,
         debug: { source: 'cache antigo', stale: true, error: error.message, attempts, elapsedMs: Date.now() - t0 },

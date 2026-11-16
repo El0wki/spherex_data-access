@@ -642,9 +642,8 @@ export default function SkyMap() {
         return;
       }
 
-      setPhase('rendering');
-      setStatusMsg(`${items.length} observations found. Downloading cutouts...`);
-      items.forEach((f: any) => loadTile(frameKey(f), buildPngUrl(f, c), runId));
+      setPhase('done');
+setStatusMsg(`${items.length} observations found.`);
     } catch (err: any) {
       if (err?.name === 'AbortError' || runId !== runRef.current) return;
       console.error(err);
@@ -895,6 +894,12 @@ export default function SkyMap() {
             <a href="https://gioperovano.github.io/astrobyte2/ar/" className="shrink-0">
               <button className="ml-2 md:ml-5 text-xs md:text-base font-bold transition-all bg-amber-600 px-3 py-1.5 md:p-2 rounded-2xl hover:cursor-pointer hover:bg-amber-400 hover:text-black">
                 AstroByte
+              </button>
+            </a>
+
+            <a href="https://gioperovano.github.io/astrobyte2/game" className="shrink-0">
+              <button className="ml-2 md:ml-5 text-xs md:text-base font-bold transition-all bg-amber-600 px-3 py-1.5 md:p-2 rounded-2xl hover:cursor-pointer hover:bg-amber-400 hover:text-black">
+                Game
               </button>
             </a>
           </div>

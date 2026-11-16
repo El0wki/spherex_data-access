@@ -1,4 +1,3 @@
-// src/app/components/TimelinePlayer.tsx
 'use client';
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -11,11 +10,11 @@ type ViewMode = 'normal' | 'medsub' | 'mean';
 type Crop = { n: number; x: number; y: number; w: number; h: number };
 type Status = 'ok' | 'low' | 'pending' | 'loading' | 'err' | 'nocov';
 
-const EXPORT_MIN_SIDE = 720; // lado maior do vídeo exportado, em pixels
+const EXPORT_MIN_SIDE = 720; // longest side of the exported video, in pixels
 
 const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-// Maior retângulo em que todos os pixels têm cnt >= min (algoritmo do histograma, O(n²))
+// Largest rectangle where every pixel has cnt >= min (histogram algorithm, O(n²))
 function largestRect(cnt: Uint16Array, n: number, min: number) {
   const h = new Int32Array(n + 1);
   let best = { x: 0, y: 0, w: 0, h: 0, area: 0 };
@@ -57,7 +56,6 @@ const TICK_COLOR: Record<Status, string> = {
   nocov: 'bg-gray-800',
 };
 
-// Miniatura desenhada a partir do mesmo dado alinhado do vídeo
 function Thumb({ loaded, gain }: { loaded: Loaded; gain: number }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
 
@@ -86,7 +84,6 @@ function Thumb({ loaded, gain }: { loaded: Loaded; gain: number }) {
   );
 }
 
-// [perf] Traço do eixo de tempo memoizado: um clique só re-renderiza o que perdeu e o que ganhou o destaque
 const Tick = memo(function Tick({
   f,
   left,
@@ -103,7 +100,7 @@ const Tick = memo(function Tick({
   return (
     <button
       onClick={() => onPick(f)}
-      title={`${f.date || 'sem data'} · ${status}`}
+      title={`${f.date || 'no date'} · ${status}`}
       className={`absolute -translate-x-1/2 rounded-sm ${
         isCur
           ? 'bg-white top-0 h-8 w-[4px] md:w-[3px] z-10'
@@ -114,7 +111,6 @@ const Tick = memo(function Tick({
   );
 });
 
-// [perf] Cartão da faixa de miniaturas memoizado (só recebe valores primitivos e o `loaded`)
 const StripItem = memo(function StripItem({
   f,
   i,
@@ -146,9 +142,9 @@ const StripItem = memo(function StripItem({
             <Thumb loaded={loaded} gain={gain} />
           </div>
         ) : status === 'err' ? (
-          <span className="text-[9px] text-red-400">erro</span>
+          <span className="text-[9px] text-red-400">error</span>
         ) : status === 'nocov' ? (
-          <span className="text-[9px] text-gray-600">sem cob.</span>
+          <span className="text-[9px] text-gray-600">no cov.</span>
         ) : (
           <div className="relative w-full h-full">
             <Skeleton className="absolute inset-0" />
@@ -175,9 +171,9 @@ function TimelinePlayer({
 }: {
   frames: any[];
   center: Center;
-  active: boolean; // baixar os frames (pode ser true mesmo com a aba escondida: pré-carrega)
-  visible?: boolean; // a aba está na tela
-  searching?: boolean; // a busca de observações está em andamento
+  active: boolean; // download frames (can be true while the tab is hidden: preloads)
+  visible?: boolean;
+  searching?: boolean;
   emptyMessage?: string;
   selectedKey: string | null;
   onSelect: (key: string) => void;
@@ -192,13 +188,13 @@ function TimelinePlayer({
   const [mode, setMode] = useState<ViewMode>('normal');
   const [gain, setGain] = useState(10);
   const [zoom, setZoom] = useState(1);
-  const [minValid, setMinValid] = useState(60); // % mínima de pixels com dado para o frame entrar no vídeo
+  const [minValid, setMinValid] = useState(60); // min % of pixels with data for a frame to enter the video
   const [autoCrop, setAutoCrop] = useState(false);
   const [showMark, setShowMark] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [exportPct, setExportPct] = useState(0);
   const [panel, setPanel] = useState<null | 'help' | 'info'>(null);
-  const [showCtl, setShowCtl] = useState(false); // só afeta o celular: abre/fecha os sliders
+  const [showCtl, setShowCtl] = useState(false); // mobile only: toggles the sliders
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stripRef = useRef<HTMLDivElement | null>(null);
@@ -209,14 +205,12 @@ function TimelinePlayer({
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
 
-  // Detectores que existem nos dados (nada fixo no código)
   const dets = useMemo(() => {
     const m = new Map<string, number>();
     frames.forEach((f) => m.set(detOf(f), (m.get(detOf(f)) || 0) + 1));
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [frames]);
 
-  // Rótulo da faixa de cor, se a consulta trouxe (energy_bandpassname)
   const bandLabel = useMemo(() => {
     const seen = new Map<string, Set<string>>();
     frames.forEach((f) => {
@@ -231,7 +225,7 @@ function TimelinePlayer({
     return out;
   }, [frames]);
 
-  // Detector inicial: o da observação selecionada, ou o que tem mais frames
+  // Initial detector: the selected observation's, else the one with the most frames
   useEffect(() => {
     if (!dets.length || dets.some(([d]) => d === det)) return;
     const selFrame = frames.find((f) => keyOf(f) === selRef.current);
@@ -239,7 +233,6 @@ function TimelinePlayer({
     setDet(pref);
   }, [dets, det, frames]);
 
-  // Se a seleção vier de fora, acompanha o detector dela
   useEffect(() => {
     if (!selectedKey) return;
     const f = frames.find((x) => keyOf(x) === selectedKey);
@@ -247,7 +240,6 @@ function TimelinePlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedKey]);
 
-  // Escondida: para o play
   useEffect(() => {
     if (!visible) setPlaying(false);
   }, [visible]);
@@ -256,7 +248,6 @@ function TimelinePlayer({
   const summary = useMemo(() => summarize(list), [list]);
   const listKey = useMemo(() => list.map(keyOf).join('\n'), [list]);
 
-  // Pede ao armazém os frames do detector atual (ele baixa em ordem espalhada no tempo)
   useEffect(() => {
     setTarget({ ra: center.ra, dec: center.dec, fov: center.fov });
     want(active ? list.map(keyOf) : []);
@@ -287,24 +278,22 @@ function TimelinePlayer({
     return s.status;
   };
 
-  // Frame atual = o selecionado (se estiver no vídeo), senão o primeiro
   const curIdx = ready.findIndex((f) => keyOf(f) === selectedKey);
   const cur = curIdx >= 0 ? curIdx : 0;
   const curFrame = ready[cur];
   const curKey = curFrame ? keyOf(curFrame) : '';
   const curLoaded = curKey ? getSlot(curKey)?.loaded : undefined;
 
- // Mantém a seleção dentro do que está no vídeo
-useEffect(() => {
-  if (!ready.length || curIdx >= 0) return;
-  // Se a seleção é de outro detector, o efeito acima vai trocar o `det`: não briga com ele
-  const selFrame = frames.find((f) => keyOf(f) === selRef.current);
-  if (selFrame && detOf(selFrame) !== det) return;
-  onSelectRef.current(keyOf(ready[0]));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [ready, curIdx, det]);
+  useEffect(() => {
+    if (!ready.length || curIdx >= 0) return;
+    // A selection from another detector is handled by the effect above: don't fight it
+    const selFrame = frames.find((f) => keyOf(f) === selRef.current);
+    if (selFrame && detOf(selFrame) !== det) return;
+    onSelectRef.current(keyOf(ready[0]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, curIdx, det]);
 
-  // Retângulo comum: maior região sem buracos em todos os frames prontos (ou em 80% deles, se ficar pequena demais)
+  // Common rectangle with no holes across all ready frames (falls back to 80% of them if too small)
   const crop = useMemo<Crop | null>(() => {
     if (ready.length === 0) return null;
     const first = getSlot(keyOf(ready[0]))!.loaded!;
@@ -320,7 +309,6 @@ useEffect(() => {
     return { n, x: r.x, y: r.y, w: r.w, h: r.h };
   }, [ready, autoCrop]);
 
-  // Média ou mediana pixel a pixel dos frames prontos
   const stack = useMemo(() => {
     if (mode === 'normal' || ready.length < 2) return null;
     const all = ready.map((f) => getSlot(keyOf(f))!.loaded!);
@@ -347,7 +335,6 @@ useEffect(() => {
     return out;
   }, [ready, mode]);
 
-  // Play: avança a seleção (a seleção é única, vale também para a faixa e o painel lateral)
   const readyRef = useRef(ready);
   readyRef.current = ready;
   useEffect(() => {
@@ -361,7 +348,6 @@ useEffect(() => {
     return () => clearInterval(t);
   }, [playing, fps, ready.length, mode]);
 
-  // Pixels (já recortados) do frame i
   const buildImage = (i: number): ImageData | null => {
     if (!crop || !ready[i]) return null;
     const e = getSlot(keyOf(ready[i]))?.loaded;
@@ -380,9 +366,6 @@ useEffect(() => {
     return renderImage(vals, w, h, gain);
   };
 
-  // Desenho na tela
-  // [perf] Com a aba escondida não desenha (antes redesenhava a cada frame que chegava ao store).
-  // Ao abrir a aba, `visible` muda e o efeito roda uma vez.
   useEffect(() => {
     if (!visible) return;
     const cv = canvasRef.current;
@@ -395,7 +378,7 @@ useEffect(() => {
     if (!ctx) return;
     ctx.putImageData(img, 0, 0);
     if (showMark) {
-      // O alvo fica no centro da grade original: (n-1)/2, como em sky.ts
+      // The target sits at the center of the original grid: (n-1)/2, as in sky.ts
       const mx = (crop.n - 1) / 2 - crop.x;
       const my = (crop.n - 1) / 2 - crop.y;
       ctx.strokeStyle = 'rgba(250, 204, 21, 0.85)';
@@ -407,7 +390,6 @@ useEffect(() => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, curKey, mode, gain, ready, stack, crop, showMark]);
 
-  // Mantém a miniatura atual visível na faixa (só com a aba na tela)
   useEffect(() => {
     if (!visible) return;
     const i = list.findIndex((f) => keyOf(f) === curKey);
@@ -415,7 +397,7 @@ useEffect(() => {
     stripRef.current?.querySelector(`[data-i="${i}"]`)?.scrollIntoView({ block: 'nearest', inline: 'center' });
   }, [curKey, visible, list]);
 
-  // Exporta: vídeo .webm (ou PNG na visão "Empilhada")
+  // Exports a .webm video (or a PNG in "Stacked" mode)
   const exportMedia = async () => {
     if (!crop || ready.length === 0 || exporting) return;
     setExporting(true);
@@ -432,7 +414,7 @@ useEffect(() => {
       tmp.width = crop.w;
       tmp.height = crop.h;
       const tctx = tmp.getContext('2d');
-      if (!octx || !tctx) throw new Error('canvas indisponível');
+      if (!octx || !tctx) throw new Error('canvas unavailable');
 
       const fontPx = Math.max(12, Math.round(H / 32));
       const drawFrame = (i: number) => {
@@ -441,7 +423,7 @@ useEffect(() => {
         tctx.putImageData(img, 0, 0);
         octx.imageSmoothingEnabled = false;
         octx.drawImage(tmp, 0, 0, W, H);
-        const label = mode === 'mean' ? `${det} · média de ${ready.length} frames` : `${det} · ${ready[i]?.date || ''}`;
+        const label = mode === 'mean' ? `${det} · mean of ${ready.length} frames` : `${det} · ${ready[i]?.date || ''}`;
         octx.font = `${fontPx}px ui-monospace, monospace`;
         octx.textBaseline = 'bottom';
         octx.fillStyle = 'rgba(0,0,0,0.55)';
@@ -458,12 +440,12 @@ useEffect(() => {
         return;
       }
       if (typeof MediaRecorder === 'undefined') {
-        alert('Este navegador não suporta gravação de vídeo. Use Chrome, Edge ou Firefox.');
+        alert('This browser does not support video recording. Use Chrome, Edge or Firefox.');
         return;
       }
       const mime = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find((m) => MediaRecorder.isTypeSupported(m));
       if (!mime) {
-        alert('Este navegador não grava .webm. Use Chrome, Edge ou Firefox.');
+        alert('This browser cannot record .webm. Use Chrome, Edge or Firefox.');
         return;
       }
       const stream = out.captureStream(fps);
@@ -484,13 +466,13 @@ useEffect(() => {
       await stopped;
       saveBlob(new Blob(chunks, { type: 'video/webm' }), `${baseName}.webm`);
     } catch (e: any) {
-      alert(`Não consegui exportar: ${e?.message || e}`);
+      alert(`Export failed: ${e?.message || e}`);
     } finally {
       setExporting(false);
     }
   };
 
-  // Eixo do tempo: posição de cada observação pela data (ou espaçada igualmente se faltarem datas)
+  // Tick positions by date (evenly spaced if any date is missing)
   const axis = useMemo(() => {
     const n = list.length;
     const ts = list.map(timeOf);
@@ -504,22 +486,19 @@ useEffect(() => {
   }, [list, summary]);
 
   const pick = (f: any) => {
-    if (statusOf(f) !== 'ok') return; // só frames já prontos e com cobertura suficiente
+    if (statusOf(f) !== 'ok') return;
     setPlaying(false);
     onSelect(keyOf(f));
   };
-  // [perf] Versão estável de `pick` para os itens memoizados (sempre chama a mais nova)
   const pickRef = useRef(pick);
   pickRef.current = pick;
   const onPick = useCallback((f: any) => pickRef.current(f), []);
 
-
-  // Troca de detector pelo menu: já seleciona o primeiro frame dele (o efeito acima não faz isso mais)
-const changeDet = (d: string) => {
-  setDet(d);
-  const first = sortByTime(frames.filter((f) => detOf(f) === d))[0];
-  if (first) onSelectRef.current(keyOf(first));
-};
+  const changeDet = (d: string) => {
+    setDet(d);
+    const first = sortByTime(frames.filter((f) => detOf(f) === d))[0];
+    if (first) onSelectRef.current(keyOf(first));
+  };
 
   const goto = (i: number) => {
     if (!ready.length) return;
@@ -528,28 +507,27 @@ const changeDet = (d: string) => {
 
   const eta =
     pr.finished >= 2 && pr.pending > 0
-      ? `falta ${fmtEta((pr.elapsedMs / pr.finished) * pr.pending)}`
-      : 'cada frame leva 10–25 s na IRSA';
+      ? `${fmtEta((pr.elapsedMs / pr.finished) * pr.pending)} left`
+      : 'each frame takes 10–25 s from IRSA';
 
-  // text-base no celular evita o zoom automático do iPhone ao focar no select
+  // text-base on mobile prevents iOS auto-zoom when focusing the select
   const sel = 'bg-gray-800 border border-gray-700 rounded px-2 py-1.5 md:py-1 text-base md:text-xs text-white outline-none';
   const aspect = crop ? crop.w / crop.h : 1;
   const sumText =
     summary.t0 !== null
-      ? `${mjdToDate(summary.t0)} → ${mjdToDate(summary.t1!)} (${Math.round(summary.spanDays!)} dias) · ${summary.groups.length} período(s) de observação`
-      : 'observações sem data na consulta';
+      ? `${mjdToDate(summary.t0)} → ${mjdToDate(summary.t1!)} (${Math.round(summary.spanDays!)} days) · ${summary.groups.length} observation period(s)`
+      : 'observations have no date in the query';
 
   const showLoadingPanel = !det || (list.length > 0 && st.pending > 0);
 
   return (
     <div className="absolute inset-0 flex flex-col bg-black">
-      {/* Controles */}
       <div className="flex flex-wrap items-center gap-2 p-2 text-xs bg-gray-900/90 border-b border-gray-800">
         <select
-  value={det}
-  onChange={(e) => changeDet(e.target.value)}
+          value={det}
+          onChange={(e) => changeDet(e.target.value)}
           className={sel}
-          title="Cada detector cobre uma faixa de cor do infravermelho. Compare frames do mesmo detector."
+          title="Each detector covers an infrared color band. Compare frames from the same detector."
         >
           {dets.map(([d, n]) => (
             <option key={d} value={d} className="bg-gray-900">
@@ -562,30 +540,29 @@ const changeDet = (d: string) => {
           value={mode}
           onChange={(e) => setMode(e.target.value as ViewMode)}
           className={sel}
-          title="Normal: como veio. − mediana: tira o que é fixo e deixa só o que se move ou varia. Empilhada: média de todas as datas, para ver coisas fracas."
+          title="Normal: as received. − median: removes what is fixed, leaving only what moves or varies. Stacked: mean of all dates, to reveal faint things."
         >
           <option value="normal" className="bg-gray-900">Normal</option>
-          <option value="medsub" className="bg-gray-900">− mediana (realça o que se move)</option>
-          <option value="mean" className="bg-gray-900">Empilhada (média)</option>
+          <option value="medsub" className="bg-gray-900">− median (highlights movers)</option>
+          <option value="mean" className="bg-gray-900">Stacked (mean)</option>
         </select>
 
-        {/* Só no celular: abre/fecha os sliders */}
         <button
           onClick={() => setShowCtl((s) => !s)}
           className={`md:hidden px-3 py-1.5 rounded border ${showCtl ? 'bg-blue-600 border-blue-400 text-white' : 'bg-gray-800 border-gray-700 text-gray-300'}`}
         >
-          ⚙ ajustes
+          ⚙ settings
         </button>
 
-        {/* No celular: linha própria que abre/fecha. No desktop (md:contents): os itens ficam soltos na barra, como antes */}
+        {/* Mobile: own row, toggled. Desktop (md:contents): items sit inline in the bar */}
         <div className={`${showCtl ? 'flex' : 'hidden'} md:contents flex-wrap items-center gap-x-3 gap-y-2 w-full`}>
           <label className="flex items-center gap-1 text-gray-400">
-            vel.
+            speed
             <input type="range" min={1} max={12} value={fps} onChange={(e) => setFps(+e.target.value)} />
             {fps} fps
           </label>
-          <label className="flex items-center gap-1 text-gray-400" title="Quanto mais alto, mais objetos fracos aparecem (e mais ruído)">
-            contraste
+          <label className="flex items-center gap-1 text-gray-400" title="Higher shows fainter objects (and more noise)">
+            contrast
             <input type="range" min={3} max={40} value={gain} onChange={(e) => setGain(+e.target.value)} />
           </label>
           <label className="flex items-center gap-1 text-gray-400">
@@ -593,21 +570,21 @@ const changeDet = (d: string) => {
             <input type="range" min={1} max={8} step={0.5} value={zoom} onChange={(e) => setZoom(+e.target.value)} />
             {zoom}x
           </label>
-          <label className="flex items-center gap-1 text-gray-400" title="Frames em que o detector cobre menos que isso da área ficam fora do vídeo">
-            cobertura mín.
+          <label className="flex items-center gap-1 text-gray-400" title="Frames where the detector covers less than this share of the area are left out of the video">
+            min. coverage
             <input type="range" min={0} max={100} step={5} value={minValid} onChange={(e) => setMinValid(+e.target.value)} />
             {minValid}%
           </label>
           <label
             className="flex items-center gap-1 text-gray-400"
-            title="Remove as bordas sem cobertura comum entre os frames. Desativado, mostra a grade completa."
+            title="Removes borders without common coverage across frames. Off shows the full grid."
           >
             <input type="checkbox" checked={autoCrop} onChange={(e) => setAutoCrop(e.target.checked)} />
-            recorte automático
+            auto crop
           </label>
-          <label className="flex items-center gap-1 text-gray-400" title="Círculo amarelo na posição digitada (catálogo, época J2000)">
+          <label className="flex items-center gap-1 text-gray-400" title="Yellow circle at the typed position (catalog, J2000 epoch)">
             <input type="checkbox" checked={showMark} onChange={(e) => setShowMark(e.target.checked)} />
-            marcar alvo
+            mark target
           </label>
         </div>
 
@@ -615,37 +592,35 @@ const changeDet = (d: string) => {
           onClick={exportMedia}
           disabled={exporting || ready.length === 0}
           className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 px-3 py-1.5 md:py-0.5 rounded-full text-white"
-          title="Grava os frames mostrados em um vídeo (.webm). Na visão Empilhada, baixa um PNG."
+          title="Records the displayed frames to a video (.webm). In Stacked mode, downloads a PNG."
         >
-          {exporting ? `Gravando... ${exportPct}%` : mode === 'mean' || ready.length < 2 ? 'Baixar PNG' : 'Baixar vídeo (.webm)'}
+          {exporting ? `Recording... ${exportPct}%` : mode === 'mean' || ready.length < 2 ? 'Download PNG' : 'Download video (.webm)'}
         </button>
         {st.err > 0 && (
           <button onClick={retryErrors} className="bg-blue-600 hover:bg-blue-500 px-3 py-1.5 md:py-0.5 rounded-full text-white">
-            Tentar {st.err} erros de novo
+            Retry {st.err} errors
           </button>
         )}
         <span className="hidden md:block flex-1" />
-        <button onClick={() => setPanel((p) => (p === 'help' ? null : 'help'))} className="px-2 py-1.5 md:py-0.5 rounded bg-gray-800 hover:bg-gray-700">? ajuda</button>
-        <button onClick={() => setPanel((p) => (p === 'info' ? null : 'info'))} className="px-2 py-1.5 md:py-0.5 rounded bg-gray-800 hover:bg-gray-700">ⓘ detalhes</button>
+        <button onClick={() => setPanel((p) => (p === 'help' ? null : 'help'))} className="px-2 py-1.5 md:py-0.5 rounded bg-gray-800 hover:bg-gray-700">? help</button>
+        <button onClick={() => setPanel((p) => (p === 'info' ? null : 'info'))} className="px-2 py-1.5 md:py-0.5 rounded bg-gray-800 hover:bg-gray-700">ⓘ details</button>
       </div>
 
-      {/* Resumo calculado dos dados */}
       <div className="px-3 py-1 text-[11px] text-gray-300 bg-gray-900/60 border-b border-gray-800 font-mono truncate">
-        {det || '—'}: {summary.count} observações · {sumText}
+        {det || '—'}: {summary.count} observations · {sumText}
       </div>
 
-      {/* Imagem */}
       <div className="flex-1 min-h-0 relative overflow-hidden flex items-center justify-center">
         {frames.length === 0 ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-xs text-gray-400 px-6 text-center">
             {searching ? (
               <>
                 <Radar size={64} />
-                <span>Buscando observações na IRSA… {searchSecs}s</span>
-                <span className="text-[11px] text-gray-600">pode levar até 30 s se a IRSA estiver lenta</span>
+                <span>Searching IRSA for observations… {searchSecs}s</span>
+                <span className="text-[11px] text-gray-600">can take up to 30 s if IRSA is slow</span>
               </>
             ) : (
-              <span className="max-w-lg leading-relaxed">{emptyMessage || 'Nenhuma observação para esse alvo.'}</span>
+              <span className="max-w-lg leading-relaxed">{emptyMessage || 'No observations for this target.'}</span>
             )}
           </div>
         ) : ready.length > 0 ? (
@@ -667,9 +642,9 @@ const changeDet = (d: string) => {
             <Radar size={64} />
             <Steps
               items={[
-                { label: `${frames.length} observações encontradas · ${list.length} no detector ${det || '…'}`, state: 'done' },
-                { label: `Baixando e alinhando frames (${pr.done}/${pr.total})`, state: 'active' },
-                { label: 'Montando o vídeo', state: 'todo' },
+                { label: `${frames.length} observations found · ${list.length} on detector ${det || '…'}`, state: 'done' },
+                { label: `Downloading and aligning frames (${pr.done}/${pr.total})`, state: 'active' },
+                { label: 'Building the video', state: 'todo' },
               ]}
             />
             <div className="w-64 max-w-full">
@@ -680,18 +655,17 @@ const changeDet = (d: string) => {
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500 px-6 text-center">
             {list.length === 0
-              ? 'Nenhum frame deste detector para esse alvo.'
+              ? 'No frames from this detector for this target.'
               : st.low > 0 && st.pending === 0
-              ? `${st.low} frame(s) chegaram, mas todos têm cobertura abaixo de ${minValid}%. Reduza a "cobertura mín.".`
-              : `Nenhum frame deste detector ficou disponível: ${st.err} erro(s), ${st.nocov} sem cobertura. Tente outro detector${st.err ? ' ou use "Tentar de novo"' : ''}.`}
+              ? `${st.low} frame(s) arrived, but all have coverage below ${minValid}%. Lower "min. coverage".`
+              : `No frames from this detector became available: ${st.err} error(s), ${st.nocov} without coverage. Try another detector${st.err ? ' or use "Retry"' : ''}.`}
           </div>
         )}
 
-        {/* O vídeo já toca, mas ainda chegam frames */}
         {ready.length > 0 && pr.pending > 0 && (
           <div className="absolute left-2 bottom-2 z-10 w-48 md:w-60 bg-gray-900/90 border border-gray-700 rounded p-2 flex flex-col gap-1 pointer-events-none">
             <span className="text-[10px] text-gray-300 font-mono">
-              Baixando mais frames: {pr.done}/{pr.total} · {eta}
+              Downloading more frames: {pr.done}/{pr.total} · {eta}
             </span>
             <Bar value={pr.total ? pr.done / pr.total : 0} />
           </div>
@@ -699,31 +673,29 @@ const changeDet = (d: string) => {
 
         {panel === 'help' && (
           <div className="absolute top-2 left-2 right-2 max-w-xl max-h-[90%] overflow-auto z-10 bg-gray-900/95 border border-gray-700 rounded p-3 text-[11px] text-gray-300 leading-relaxed">
-            <b className="text-white">Como ler esta tela.</b> O ponto que você escolheu foi fotografado várias vezes pelo SPHEREx.
-            Cada traço no eixo de tempo é uma observação; os blocos cinza são períodos de observação seguidos, agrupados
-            automaticamente, e os vazios entre eles são lacunas. A imagem mostra o mesmo pedaço do céu em cada data:
-            o que é fixo fica parado, e o que se move entre datas é candidato a asteroide, cometa ou estrela próxima.
-            O modo "− mediana" apaga o que não muda e deixa só o que varia. Cada detector vê uma faixa de cor do infravermelho,
-            e a cor muda dentro da imagem, então compare frames do mesmo detector. Toque num traço ou numa miniatura para ir à observação.
+            <b className="text-white">How to read this screen.</b> The point you chose was imaged several times by SPHEREx.
+            Each tick on the time axis is one observation; the gray blocks are consecutive observation periods, grouped
+            automatically, and the gaps between them are pauses. The image shows the same patch of sky on each date:
+            what is fixed stays still, and what moves between dates is a candidate asteroid, comet or nearby star.
+            "− median" mode erases what does not change and leaves only what varies. Each detector sees one infrared color band,
+            and color shifts across the image, so compare frames from the same detector. Tap a tick or a thumbnail to jump to that observation.
           </div>
         )}
         {panel === 'info' && (
           <div className="absolute top-2 right-2 w-[calc(100%-1rem)] md:w-96 max-h-[80%] overflow-auto z-10 bg-gray-900/95 border border-gray-700 rounded p-3 text-[10px] text-gray-300 font-mono">
-            <div className="text-white mb-1">Frame atual: {curFrame?.date || '—'} · {det}</div>
+            <div className="text-white mb-1">Current frame: {curFrame?.date || '—'} · {det}</div>
             <pre className="whitespace-pre-wrap break-all">
-              {curLoaded?.info ? JSON.stringify(curLoaded.info, null, 1) : 'Sem metadados (atualize o /api/align para a versão nova).'}
+              {curLoaded?.info ? JSON.stringify(curLoaded.info, null, 1) : 'No metadata (update /api/align to the new version).'}
             </pre>
           </div>
         )}
       </div>
 
-      {/* Eixo do tempo */}
       <div className="px-3 pt-2 bg-gray-900/90 border-t border-gray-800">
-        <div className="relative h-8 mx-1" title="Cada traço é uma observação, na posição da sua data">
+        <div className="relative h-8 mx-1" title="Each tick is an observation, placed at its date">
           {axis.bands.map((b, i) => (
             <div key={i} className="absolute top-2.5 h-3 rounded bg-gray-800" style={{ left: `${b.l * 100}%`, width: `${Math.max(b.w * 100, 0.8)}%` }} />
           ))}
-          {/* [perf] Com a aba escondida não monta os ~400 traços */}
           {visible &&
             list.map((f, i) => {
               const k = keyOf(f);
@@ -736,14 +708,13 @@ const changeDet = (d: string) => {
         </div>
       </div>
 
-      {/* Reprodução: no celular os textos descem para uma linha própria */}
       <div className="p-2 bg-gray-900/90 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
         <button
           onClick={() => setPlaying((p) => !p)}
           disabled={ready.length < 2 || mode === 'mean'}
           className="w-20 md:w-16 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded py-1.5 md:py-1 text-white"
         >
-          {playing ? '⏸ Pausar' : '▶ Play'}
+          {playing ? '⏸ Pause' : '▶ Play'}
         </button>
         <button onClick={() => goto(cur - 1)} className="px-3 md:px-2 py-1.5 md:py-1 bg-gray-800 rounded">◀</button>
         <input
@@ -757,23 +728,21 @@ const changeDet = (d: string) => {
         <button onClick={() => goto(cur + 1)} className="px-3 md:px-2 py-1.5 md:py-1 bg-gray-800 rounded">▶</button>
         <span className="font-mono text-gray-300 w-full md:w-auto md:min-w-56 text-left md:text-right order-last md:order-none">
           {mode === 'mean'
-            ? `média de ${ready.length} frames`
+            ? `mean of ${ready.length} frames`
             : ready.length
-            ? `${cur + 1}/${ready.length} · ${curFrame?.date || '—'}${curLoaded ? ` · ${Math.round(curLoaded.valid * 100)}% cob.` : ''}`
+            ? `${cur + 1}/${ready.length} · ${curFrame?.date || '—'}${curLoaded ? ` · ${Math.round(curLoaded.valid * 100)}% cov.` : ''}`
             : '—'}
         </span>
         <span className="font-mono text-gray-500 w-full md:w-auto order-last md:order-none text-[11px] md:text-xs">
           {ready.length}/{list.length} ok
-          {st.pending > 0 ? ` · ${st.pending} baixando` : ''}
-          {st.low ? ` · ${st.low} descartados` : ''}
-          {st.nocov ? ` · ${st.nocov} sem cob.` : ''}
-          {st.err ? ` · ${st.err} erros` : ''}
+          {st.pending > 0 ? ` · ${st.pending} downloading` : ''}
+          {st.low ? ` · ${st.low} discarded` : ''}
+          {st.nocov ? ` · ${st.nocov} no cov.` : ''}
+          {st.err ? ` · ${st.err} errors` : ''}
         </span>
       </div>
 
-      {/* Miniaturas (mesmo dado do vídeo, em ordem de data) */}
       <div ref={stripRef} className="h-24 md:h-28 shrink-0 flex gap-1.5 overflow-x-auto overflow-y-hidden p-2 bg-gray-950 border-t border-gray-800">
-        {/* [perf] Com a aba escondida não monta os ~400 cartões */}
         {visible &&
           list.map((f, i) => {
             const k = keyOf(f);

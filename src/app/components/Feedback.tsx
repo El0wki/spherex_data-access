@@ -1,9 +1,7 @@
-// src/app/components/Feedback.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
 
-// Renderize uma vez, na raiz da tela
 export function FeedbackStyles() {
   return (
     <style>{`
@@ -18,7 +16,6 @@ export function FeedbackStyles() {
   );
 }
 
-// Segundos desde que "on" ficou true
 export function useElapsed(on: boolean) {
   const [s, setS] = useState(0);
   useEffect(() => {
@@ -32,12 +29,11 @@ export function useElapsed(on: boolean) {
 
 export function fmtEta(ms: number) {
   const s = Math.round(ms / 1000);
-  if (s < 5) return 'poucos segundos';
+  if (s < 5) return 'a few seconds';
   if (s < 90) return `~${s} s`;
   return `~${Math.round(s / 60)} min`;
 }
 
-// Ondas que se expandem: "estou procurando"
 export function Radar({ size = 56 }: { size?: number }) {
   return (
     <div className="relative" style={{ width: size, height: size }}>
@@ -49,7 +45,6 @@ export function Radar({ size = 56 }: { size?: number }) {
   );
 }
 
-// Barra de progresso (value 0..1) ou indeterminada
 export function Bar({ value = 0, indeterminate = false }: { value?: number; indeterminate?: boolean }) {
   return (
     <div className="relative h-1.5 w-full bg-gray-800 rounded overflow-hidden">
@@ -62,7 +57,6 @@ export function Bar({ value = 0, indeterminate = false }: { value?: number; inde
   );
 }
 
-// Espaço reservado com brilho passando (miniatura ainda não chegou)
 export function Skeleton({ className = '' }: { className?: string }) {
   return (
     <div className={`relative overflow-hidden bg-gray-900 ${className}`}>
